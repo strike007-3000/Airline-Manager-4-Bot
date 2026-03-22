@@ -11,14 +11,14 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         persist-credentials: false
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with:
         path: ~/.cache/ms-playwright
         key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v6
       with:
         node-version: lts/*
     - name: Install dependencies
@@ -39,6 +39,7 @@ jobs:
         MARKETING_BUDGET: ${{ vars.MARKETING_BUDGET }}
         GAME_MODE: ${{ vars.GAME_MODE }}
         PRICE_UPDATE_HOUR_UTC: ${{ vars.PRICE_UPDATE_HOUR_UTC }}
+        PRICE_UPDATE_HOURS_UTC: ${{ vars.PRICE_UPDATE_HOURS_UTC }}
         MAX_PRICE_UPDATES_PER_RUN: ${{ vars.MAX_PRICE_UPDATES_PER_RUN }}
         EASY_MODE_ECONOMY_MULTIPLIER_PERCENT: ${{ vars.EASY_MODE_ECONOMY_MULTIPLIER_PERCENT }}
         EASY_MODE_BUSINESS_MULTIPLIER_PERCENT: ${{ vars.EASY_MODE_BUSINESS_MULTIPLIER_PERCENT }}
