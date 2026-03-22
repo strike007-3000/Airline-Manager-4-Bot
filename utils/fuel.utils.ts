@@ -1,4 +1,5 @@
 import { Page } from "@playwright/test";
+import { ConfigUtils } from "./config.utils";
 
 require('dotenv').config();
 
@@ -9,8 +10,8 @@ export class FuelUtils {
     page : Page;
 
     constructor(page : Page) {
-        this.maxFuelPrice = parseInt(process.env.MAX_FUEL_PRICE!);
-        this.maxCo2Price = parseInt(process.env.MAX_CO2_PRICE!);
+        this.maxFuelPrice = ConfigUtils.requireNumber('MAX_FUEL_PRICE');
+        this.maxCo2Price = ConfigUtils.requireNumber('MAX_CO2_PRICE');
         this.page = page;
 
         console.log("Max Fuel Price: " + this.maxFuelPrice);

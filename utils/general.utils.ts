@@ -1,4 +1,5 @@
 import { Page } from "@playwright/test";
+import { ConfigUtils } from "./config.utils";
 
 require('dotenv').config();
 
@@ -8,8 +9,8 @@ export class GeneralUtils {
     page : Page;
 
     constructor(page : Page) {
-        this.username = process.env.EMAIL!;
-        this.password = process.env.PASSWORD!;
+        this.username = ConfigUtils.requireString('EMAIL');
+        this.password = ConfigUtils.requireString('PASSWORD');
         this.page = page;
     }
 
