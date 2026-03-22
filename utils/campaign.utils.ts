@@ -1,5 +1,6 @@
 import { Page } from "@playwright/test";
 import { GeneralUtils } from "./general.utils";
+import { ConfigUtils } from "./config.utils";
 
 export class CampaignUtils {
     page: Page;
@@ -11,8 +12,8 @@ export class CampaignUtils {
     constructor(page: Page) {
         if(process.env.INCREASE_AIRLINE_REPUTATION === 'true') {
             this.increaseAirlineReputation = true;
-            this.campaignType = parseInt(process.env.CAMPAIGN_TYPE!);
-            this.campaignDuration = parseInt(process.env.CAMPAIGN_DURATION!);
+            this.campaignType = ConfigUtils.requireNumber('CAMPAIGN_TYPE');
+            this.campaignDuration = ConfigUtils.requireNumber('CAMPAIGN_DURATION');
         }
 
         this.page = page;

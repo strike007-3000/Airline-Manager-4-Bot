@@ -3,12 +3,16 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "01,31 * * * *"
+permissions:
+  contents: read
 jobs:
   test:
     timeout-minutes: 10
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
     - uses: actions/cache@v4
       with:
         path: ~/.cache/ms-playwright
@@ -20,18 +24,16 @@ jobs:
       run: npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps chromium
-    - name: Create .env file
-      run: |
-        touch .env
-        echo "EMAIL=${{ secrets.EMAIL }}" >> .env
-        echo "PASSWORD=${{ secrets.PASSWORD }}" >> .env
-        echo "MAX_FUEL_PRICE=${{ vars.MAX_FUEL_PRICE }}" >> .env
-        echo "MAX_CO2_PRICE=${{ vars.MAX_CO2_PRICE }}" >> .env
-        echo "INCREASE_AIRLINE_REPUTATION=${{ vars.INCREASE_AIRLINE_REPUTATION }}" >> .env
-        echo "CAMPAIGN_TYPE=${{ vars.CAMPAIGN_TYPE }}" >> .env
-        echo "CAMPAIGN_DURATION=${{ vars.CAMPAIGN_DURATION }}" >> .env
     - name: Run Playwright tests
       run: npx playwright test
+      env:
+        EMAIL: ${{ secrets.EMAIL }}
+        PASSWORD: ${{ secrets.PASSWORD }}
+        MAX_FUEL_PRICE: ${{ vars.MAX_FUEL_PRICE }}
+        MAX_CO2_PRICE: ${{ vars.MAX_CO2_PRICE }}
+        INCREASE_AIRLINE_REPUTATION: ${{ vars.INCREASE_AIRLINE_REPUTATION }}
+        CAMPAIGN_TYPE: ${{ vars.CAMPAIGN_TYPE }}
+        CAMPAIGN_DURATION: ${{ vars.CAMPAIGN_DURATION }}
     # - uses: actions/upload-artifact@v4
     #   if: always()
     #   with:
