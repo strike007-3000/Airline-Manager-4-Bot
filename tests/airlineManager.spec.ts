@@ -20,6 +20,9 @@ test('All Operations', async ({ page }) => {
 
   await generalUtils.login(page);
 
+  await page.locator('#mapRoutes').getByRole('img').click();
+  await GeneralUtils.sleep(2500);
+  await fuelUtils.analyzePlannedDepartures();
   await page.locator('#mapMaint > img').first().click();
   await fuelUtils.buyFuel();
 
