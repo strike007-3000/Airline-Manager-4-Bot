@@ -50,10 +50,13 @@ Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** and
 - `MARKETING_BUDGET`: `low`
 - `GAME_MODE`: `easy`
 - `PRICE_UPDATE_HOUR_UTC`: `23`
+- `PRICE_UPDATE_HOURS_UTC`: optional comma-separated list such as `1,13,23`
 - `MAX_PRICE_UPDATES_PER_RUN`: `12`
 - `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT`: `110`
 - `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT`: `108`
 - `EASY_MODE_FIRST_MULTIPLIER_PERCENT`: `106`
+- `EASY_MODE_CARGO_LARGE_MULTIPLIER_PERCENT`: `110`
+- `EASY_MODE_CARGO_HEAVY_MULTIPLIER_PERCENT`: `108`
 
 ### 4. Optional legacy campaign variables
 
@@ -72,7 +75,7 @@ You said you do **not** want to maintain route-by-route pricing JSON.
 This version now works differently:
 
 - it does **not** require any route list.
-- it only runs once per day, controlled by `PRICE_UPDATE_HOUR_UTC`.
+- it only runs during your configured pricing hour window, controlled by `PRICE_UPDATE_HOUR_UTC` or `PRICE_UPDATE_HOURS_UTC`.
 - it only tries to update flights that look **not yet departed** on the routes page.
 - it applies simple Easy mode multipliers to the visible price inputs it can find.
 
@@ -89,7 +92,7 @@ Optional cargo multipliers if you use cargo aircraft:
 
 The pricing assistant now follows a simpler Easy mode flow:
 - it checks the current UTC hour
-- it only runs when the hour matches `PRICE_UPDATE_HOUR_UTC`
+- it only runs when the hour matches `PRICE_UPDATE_HOUR_UTC`, or any hour in `PRICE_UPDATE_HOURS_UTC`
 - it looks for price editors on the routes page
 - it skips rows that appear to already be departed
 - it updates up to `MAX_PRICE_UPDATES_PER_RUN` flights in that daily window
@@ -151,13 +154,14 @@ If you want to keep usage even lower:
 10. Add `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT=108`.
 11. Add `EASY_MODE_FIRST_MULTIPLIER_PERCENT=106`.
 12. Enable GitHub Actions.
-13. Run the workflow manually once near your configured `PRICE_UPDATE_HOUR_UTC`.
+13. Run the workflow manually once near one of your configured pricing hours.
 14. If everything looks good, leave the schedule enabled.
 
 ## Notes
 - Language of your game must be **English** for this bot to work.
 - Trigger times may vary due to heavy loads on GitHub Actions.
 - To change the schedule, edit the **cron** expressions under **schedule** in `.github/workflows/playwright.yml`. Use [crontab.guru](https://crontab.guru/) to generate your desired cron expression.
+- If you want pricing to run at multiple UTC hours, set `PRICE_UPDATE_HOURS_UTC` to a comma-separated list like `1,13,23` and make sure the workflow **schedule** includes those hours.
 - This repository can be public as long as your login details stay in GitHub **Actions secrets** and your thresholds stay in GitHub **Actions variables**. Do not commit credentials or personal values directly into the repository.
 - If you still prefer not to expose the code publicly, you can clone this project and commit it to a private repository instead.
 - For questions, reach out on Discord: `muhittin852`.
