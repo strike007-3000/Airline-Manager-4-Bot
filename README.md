@@ -1,6 +1,6 @@
 # Airline-Manager-4-Bot
 
-This repository contains a bot for Airline Manager 4, built with Playwright and scheduled to run on GitHub Actions. The bot is designed to run every hour at 01 and 31 minutes but the schedule can be changed according to preference.
+This repository contains a bot for Airline Manager 4, built with Playwright and scheduled to run on GitHub Actions. The bot is configured to run overnight at 23:00 UTC and then every 2 hours until 09:00 UTC, but the schedule can be changed according to preference.
 ## Features
 
 ### Implemented
@@ -30,11 +30,12 @@ This repository contains a bot for Airline Manager 4, built with Playwright and 
      - `CAMPAIGN_DURATION`: 4 (Again you can set this to your desired campaign duration)
 4. **Enable workflows:**
    - Go to **Actions** and enable workflows.
-5. The workflow will now be triggered twice every hour at 01 and 31 minutes.
+5. The workflow will now be triggered at 23:00 UTC and then at 01:00, 03:00, 05:00, 07:00, and 09:00 UTC.
 
 ## Notes
 - Language of your game must be **English** for this bot to work.
 - Trigger times may vary due to heavy loads on GitHub Actions.
-- To change the schedule, edit the **cron** expression under **schedule** in `.github/workflows/playwright.yml`. Use [crontab.guru](https://crontab.guru/) to generate your desired cron expression.
-- If you don't want your repo to be public you can clone this project and commit it to your private repo.
+- To change the schedule, edit the **cron** expressions under **schedule** in `.github/workflows/playwright.yml`. Use [crontab.guru](https://crontab.guru/) to generate your desired cron expression.
+- This repository can be public as long as your login details stay in GitHub **Actions secrets** and your thresholds stay in GitHub **Actions variables**. Do not commit credentials or personal values directly into the repository.
+- If you still prefer not to expose the code publicly, you can clone this project and commit it to a private repository instead.
 - For questions, reach out on Discord: `muhittin852`.
