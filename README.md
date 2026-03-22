@@ -7,10 +7,11 @@ This repository contains a bot for Airline Manager 4, built with Playwright and 
 ### Implemented
 - Start an eco-friendly campaign if not already started.
 - Run a lightweight smart marketing selector for airline reputation campaigns.
-- Buy fuel and CO2 if prices are below specified thresholds.
+- Track fuel and CO2 price history in a local JSON cache and score current prices by percentile.
+- Buy fuel and CO2 using market-intelligence rules based on price caps, favorable percentiles, and minimum cover hours.
 - Depart all planes.
 - Schedule repairs and A-Checks if needed.
-- Buy fuel and CO2 at higher prices if supplies are nearly finished.
+- Force CO2 purchases when holdings go negative, even if the market is expensive.
 - Change ticket prices once a day for Easy mode flights that have not departed yet, using simple built-in multipliers.
 
 ## Why the campaign selector is simpler than route optimization
@@ -46,6 +47,17 @@ Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** and
 
 - `MAX_FUEL_PRICE`: `550`
 - `MAX_CO2_PRICE`: `120`
+- `MINIMUM_FUEL_COVER_HOURS`: `12`
+- `TARGET_FUEL_COVER_HOURS`: `36`
+- `AGGRESSIVE_FUEL_COVER_HOURS`: `72`
+- `MINIMUM_CO2_COVER_HOURS`: `24`
+- `TARGET_CO2_COVER_HOURS`: `72`
+- `AGGRESSIVE_CO2_COVER_HOURS`: `120`
+- `AVERAGE_FUEL_BURN_PER_DEPARTURE`: `250000`
+- `AVERAGE_CO2_BURN_PER_DEPARTURE`: `100000`
+- `FAVORABLE_FUEL_PERCENTILE`: `35`
+- `FAVORABLE_CO2_PERCENTILE`: `35`
+- `MARKET_HISTORY_FILE`: optional local cache path such as `.cache/market-history.json`
 - `MARKETING_MODE`: `smart`
 - `MARKETING_BUDGET`: `low`
 - `GAME_MODE`: `easy`
@@ -165,3 +177,16 @@ If you want to keep usage even lower:
 - This repository can be public as long as your login details stay in GitHub **Actions secrets** and your thresholds stay in GitHub **Actions variables**. Do not commit credentials or personal values directly into the repository.
 - If you still prefer not to expose the code publicly, you can clone this project and commit it to a private repository instead.
 - For questions, reach out on Discord: `muhittin852`.
+
+## Fuel / CO2 market intelligence
+
+The fuel purchaser now keeps a local JSON price-history file, estimates upcoming consumption from the visible planned departures on the routes page, and buys by cover time rather than hard-coded low-stock numbers.
+
+The logic now:
+- snapshots planned departures before opening the fuel market
+- estimates hourly fuel and CO2 usage using configurable average burn-per-departure values
+- maintains minimum cover in hours
+- buys up to a larger bulk-cover target when the current price percentile is favorable
+- forces a CO2 purchase if holdings are negative, even when the price is above the normal cap
+
+Because GitHub-hosted runners are ephemeral, the price-history cache is most useful on a persistent runner or when your workflow preserves the file between runs.
