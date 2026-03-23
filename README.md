@@ -10,7 +10,7 @@ This repository contains a bot for Airline Manager 4, built with Playwright and 
 - Track fuel and CO2 price history in a local JSON cache and score current prices by percentile.
 - Buy fuel and CO2 using market-intelligence rules based on price caps, favorable percentiles, and minimum cover hours.
 - Depart all planes.
-- Schedule repairs and A-Checks if needed.
+- Schedule due A-Checks and repairs (30%+ wear by default), including a departure-time retry flow if maintenance blocks a flight.
 - Force CO2 purchases when holdings go negative, even if the market is expensive.
 - Change ticket prices once a day for Easy mode flights that have not departed yet, using simple built-in multipliers.
 
@@ -61,6 +61,7 @@ Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** and
 - `MARKETING_MODE`: `smart`
 - `MARKETING_BUDGET`: `low`
 - `GAME_MODE`: `easy`
+- `REPAIR_THRESHOLD_PERCENT`: optional wear threshold for bulk repairs, default `30`
 - `PRICE_UPDATE_HOUR_UTC`: `23`
 - `PRICE_UPDATE_HOURS_UTC`: optional comma-separated list such as `1,13,23`
 - `MAX_PRICE_UPDATES_PER_RUN`: `12`
@@ -134,6 +135,16 @@ The default schedule runs at:
 - `09:00 UTC`
 
 If you want fewer GitHub minutes, reduce the cron schedule in `.github/workflows/playwright.yml`.
+
+## Maintenance behavior
+
+The bot now handles maintenance in two places:
+- during the normal maintenance step
+- again immediately before departure attempts
+
+That means if a flight becomes blocked because of a due A-Check or because wear is at or above the configured repair threshold, the bot goes back to maintenance, schedules the work, returns to the routes page, and retries departures.
+
+Bulk repairs now default to `30%` wear, configurable with `REPAIR_THRESHOLD_PERCENT`.
 
 ## Free-tier guidance
 
