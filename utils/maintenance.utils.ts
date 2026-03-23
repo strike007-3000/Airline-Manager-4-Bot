@@ -81,7 +81,9 @@ export class MaintenanceUtils {
         const closeButtonVisible = await this.isVisibleSafe(closeButtonSelector);
         if (closeButtonVisible) {
             await this.page.locator(closeButtonSelector).click();
-            await GeneralUtils.sleep(1000);
+            await this.page.locator('#popup').waitFor({ state: 'hidden', timeout: 3000 }).catch(async () => {
+                await GeneralUtils.sleep(1000);
+            });
         }
     }
 }

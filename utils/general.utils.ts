@@ -39,7 +39,9 @@ export class GeneralUtils {
         const closeButton = this.page.locator('#popup .glyphicons, #popup .close, .modal-header .close').first();
         if (await closeButton.isVisible().catch(() => false)) {
             await closeButton.click();
-            await this.page.waitForTimeout(300);
+            await this.page.locator('#popup').waitFor({ state: 'hidden', timeout: 3000 }).catch(async () => {
+                await this.page.waitForTimeout(500);
+            });
         }
     }
 }

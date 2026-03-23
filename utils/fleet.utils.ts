@@ -8,11 +8,13 @@ export class FleetUtils {
     page: Page;
     maxTry: number; // Added to prevent infinite loop in case of no fuel available
     maintenanceUtils: MaintenanceUtils;
+    generalUtils: GeneralUtils;
 
     constructor(page: Page) {
         this.page = page;
         this.maxTry = 8; // TODO: Find another way
         this.maintenanceUtils = new MaintenanceUtils(page);
+        this.generalUtils = new GeneralUtils(page);
     }
 
     private async getDepartureModalText() {
@@ -42,10 +44,12 @@ export class FleetUtils {
     }
 
     private async scheduleMaintenanceAndReturnToRoutes() {
+        await this.generalUtils.closePopupIfOpen();
         await this.page.locator('div:nth-child(4) > #mapMaint > img').click();
         await GeneralUtils.sleep(1500);
         const summary = await this.maintenanceUtils.prepareFlightsForDeparture();
         await this.maintenanceUtils.closeMaintenanceModal();
+        await this.generalUtils.closePopupIfOpen();
         await this.page.locator('#mapRoutes').getByRole('img').click();
         await GeneralUtils.sleep(2500);
         return summary;
