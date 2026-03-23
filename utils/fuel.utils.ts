@@ -119,6 +119,7 @@ export class FuelUtils {
             currentPrice: state.currentPrice,
             currentHolding: state.currentHolding,
             emptyCapacity: state.emptyCapacity,
+            maxAcceptedPrice: this.maxFuelPrice,
             percentile,
             minimumCoverHours: this.minimumFuelCoverHours,
             estimatedUsagePerHour,
@@ -145,6 +146,7 @@ export class FuelUtils {
             currentPrice: state.currentPrice,
             currentHolding: state.currentHolding,
             emptyCapacity: state.emptyCapacity,
+            maxAcceptedPrice: this.maxCo2Price,
             percentile,
             minimumCoverHours: this.minimumCo2CoverHours,
             estimatedUsagePerHour,
@@ -282,14 +284,6 @@ export class FuelUtils {
         return Math.max(departuresPerHour * averageBurnPerDeparture, 1);
     }
 
-    private estimateDepartingUsage(resource: ResourceType): number {
-        const snapshot = this.plannedDepartureSnapshot;
-        const departuresInNext24Hours = Math.max(snapshot?.departuresInNext24Hours ?? 0, 1);
-        const averageBurnPerDeparture = resource === 'fuel' ? this.averageFuelBurnPerDeparture : this.averageCo2BurnPerDeparture;
-
-        return departuresInNext24Hours * averageBurnPerDeparture;
-    }
-
     private calculateCoverHours(currentHolding: number, estimatedUsagePerHour: number): number {
         if (currentHolding <= 0) {
             return 0;
@@ -303,21 +297,29 @@ export class FuelUtils {
         currentPrice: number;
         currentHolding: number;
         emptyCapacity: number;
+        maxAcceptedPrice: number;
         percentile: number;
         minimumCoverHours: number;
         estimatedUsagePerHour: number;
     }): MarketDecision {
         const currentCoverHours = this.calculateCoverHours(input.currentHolding, input.estimatedUsagePerHour);
         const isNegativeCo2 = input.resource === 'co2' && input.currentHolding < 0;
+
+        if (input.currentPrice <= input.maxAcceptedPrice) {
+            return {
+                shouldBuy: input.emptyCapacity > 0,
+                quantity: input.emptyCapacity,
+                reason: `${input.resource.toUpperCase()} price is at or below the configured threshold, buying to full remaining capacity.`,
+            };
+        }
+
         if (isNegativeCo2) {
             const deficit = Math.abs(input.currentHolding);
-            const departingUsage = this.estimateDepartingUsage(input.resource);
-            const quantity = Math.min(Math.max(deficit + departingUsage, 0), input.emptyCapacity + deficit);
 
             return {
-                shouldBuy: quantity > 0,
-                quantity,
-                reason: 'CO2 holding is negative, buying enough to clear the deficit and cover upcoming departures.',
+                shouldBuy: deficit > 0,
+                quantity: deficit,
+                reason: 'CO2 holding is negative and above the configured threshold, buying enough to clear the deficit first.',
             };
         }
 
@@ -349,5 +351,30 @@ export class FuelUtils {
 
         console.log(`Bought ${resource.toUpperCase()} successfully. Amount purchased: ${decision.quantity}.`);
         await GeneralUtils.sleep(1000);
+
+        if (resource === 'co2') {
+            await this.ensureCo2IsNonNegative();
+        }
+    }
+
+    private async ensureCo2IsNonNegative() {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const state = await this.readMarketState();
+            if (state.currentHolding >= 0) {
+                return;
+            }
+
+            const additionalQuantity = Math.abs(state.currentHolding);
+            if (additionalQuantity <= 0) {
+                return;
+            }
+
+            console.log(`CO2 holding is still negative after purchase (${state.currentHolding}). Buying ${additionalQuantity} more to clear the deficit.`);
+            await this.page.getByPlaceholder('Amount to purchase').click();
+            await this.page.getByPlaceholder('Amount to purchase').press('Control+a');
+            await this.page.getByPlaceholder('Amount to purchase').fill(String(additionalQuantity));
+            await this.page.getByRole('button', { name: ' Purchase' }).click();
+            await GeneralUtils.sleep(1000);
+        }
     }
 }

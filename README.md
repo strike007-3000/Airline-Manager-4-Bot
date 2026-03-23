@@ -159,9 +159,10 @@ This logic is driven only by what the bot observes inside Airline Manager 4. It 
 The logic now:
 - snapshots planned departures before opening the fuel market
 - estimates hourly fuel and CO2 usage using configurable average burn-per-departure values
+- if fuel or CO2 is at or below the configured market-price threshold, it buys to full remaining capacity immediately
 - maintains minimum cover in hours
 - if fuel or CO2 falls below the configured minimum cover threshold, it buys to full remaining capacity immediately
-- if CO2 is already negative, it buys enough to clear the deficit and cover upcoming departures before the balance can drift further negative
+- if CO2 is already negative while the market is above the configured threshold, it keeps buying until the deficit is cleared
 - skips additional purchases whenever the current cover is already healthy
 
 Because GitHub-hosted runners are ephemeral, the price-history cache is most useful on a persistent runner or when your workflow preserves the file between runs.
