@@ -12,7 +12,7 @@ interface PriceMultipliers {
 
 interface RoutesReadySignal {
   description: string;
-  locator: Locator;
+  isSatisfied: () => Promise<boolean>;
 }
 
 export class PricingUtils {
@@ -39,20 +39,60 @@ export class PricingUtils {
   public async waitForRoutesPageReady(timeoutMs = 5000): Promise<boolean> {
     const readySignals: RoutesReadySignal[] = [
       {
-        description: 'at least one route row is visible',
-        locator: this.page.locator('table tr:has(button:has-text("Price")), table tr:has(a:has-text("Price")), table tbody tr').first(),
+        description: 'routes table has data rows beyond the header',
+        isSatisfied: async () => {
+          const tableRows = this.page.locator('table tr');
+          const rowCount = await tableRows.count().catch(() => 0);
+          if (rowCount < 2) {
+            return false;
+          }
+
+          for (let index = 1; index < rowCount; index++) {
+            const row = tableRows.nth(index);
+            if (!(await row.isVisible().catch(() => false))) {
+              continue;
+            }
+
+            const rowText = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+            if (rowText.length > 0) {
+              return true;
+            }
+          }
+
+          return false;
+        },
       },
       {
-        description: 'routes table/container is attached',
-        locator: this.page.locator('table:has(button:has-text("Price")), table:has(a:has-text("Price")), #routes, .routes, .table-responsive').first(),
+        description: 'routes summary text is visible with route details',
+        isSatisfied: async () => {
+          const mainArea = this.page.locator('main, #main, #content, .content, body').first();
+          const mainAreaText = (await mainArea.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+          return mainAreaText.includes('Routes (') && (mainAreaText.includes('Cost index') || mainAreaText.includes('Depart'));
+        },
       },
       {
-        description: 'route action area has rendered',
-        locator: this.page.locator('button:has-text("Price"), a:has-text("Price"), [onclick*="price" i], [data-testid*="route" i]').first(),
+        description: 'stable AM4 routes container is visible',
+        isSatisfied: async () => {
+          const routesContainers = this.page.locator('table, .table-responsive, #routes, [id*="route" i], [class*="route" i]');
+          const totalCount = await routesContainers.count().catch(() => 0);
+          for (let index = 0; index < totalCount; index++) {
+            const container = routesContainers.nth(index);
+            if (!(await container.isVisible().catch(() => false))) {
+              continue;
+            }
+
+            const containerText = (await container.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+            if (containerText.includes('Routes (') || (containerText.includes('Cost index') && containerText.includes('Depart'))) {
+              return true;
+            }
+          }
+
+          return false;
+        },
       },
     ];
 
-    const routeContainerSelectors = ['tr', '.route', '.route-row', '.flight', '.flight-row', '.list-group-item'];
+    const routeContainerSelectors = ['tr', 'text=/Routes \(\d+\)/', 'text=Depart', 'text=Cost index', '.route', '.route-row', '.flight', '.flight-row', '.list-group-item'];
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const routeContainerCounts = await Promise.all(
@@ -64,13 +104,7 @@ export class PricingUtils {
       console.log(`Routes page readiness probe counts: ${routeContainerCounts.map(({ selector, count }) => `${selector}=${count}`).join(', ')}`);
 
       for (const signal of readySignals) {
-        if (await signal.locator.isVisible().catch(() => false)) {
-          console.log(`Routes page readiness satisfied: ${signal.description}.`);
-          return true;
-        }
-
-        const isAttached = await signal.locator.count().then(count => count > 0).catch(() => false);
-        if (isAttached && signal.description === 'routes table/container is attached') {
+        if (await signal.isSatisfied().catch(() => false)) {
           console.log(`Routes page readiness satisfied: ${signal.description}.`);
           return true;
         }
@@ -81,7 +115,7 @@ export class PricingUtils {
 
     const mainArea = this.page.locator('main, #main, #content, .content, body').first();
     const mainAreaText = (await mainArea.innerText().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 200);
-    console.log(`Routes page readiness timed out after ${timeoutMs}ms; skipping pricing update to avoid blind interactions.`);
+    console.log(`Routes page readiness timed out after ${timeoutMs}ms; skipping pricing update because no verified routes-page signals appeared.`);
     console.log(`Routes page readiness timeout sample text: ${mainAreaText || '[no visible main area text found]'}`);
     return false;
   }
