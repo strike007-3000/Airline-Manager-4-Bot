@@ -52,8 +52,17 @@ export class PricingUtils {
       },
     ];
 
+    const routeContainerSelectors = ['tr', '.route', '.route-row', '.flight', '.flight-row', '.list-group-item'];
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      const routeContainerCounts = await Promise.all(
+        routeContainerSelectors.map(async selector => ({
+          selector,
+          count: await this.page.locator(selector).count().catch(() => 0),
+        })),
+      );
+      console.log(`Routes page readiness probe counts: ${routeContainerCounts.map(({ selector, count }) => `${selector}=${count}`).join(', ')}`);
+
       for (const signal of readySignals) {
         if (await signal.locator.isVisible().catch(() => false)) {
           console.log(`Routes page readiness satisfied: ${signal.description}.`);
@@ -70,7 +79,10 @@ export class PricingUtils {
       await this.page.waitForTimeout(250);
     }
 
+    const mainArea = this.page.locator('main, #main, #content, .content, body').first();
+    const mainAreaText = (await mainArea.innerText().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 200);
     console.log(`Routes page readiness timed out after ${timeoutMs}ms; skipping pricing update to avoid blind interactions.`);
+    console.log(`Routes page readiness timeout sample text: ${mainAreaText || '[no visible main area text found]'}`);
     return false;
   }
 
@@ -119,20 +131,33 @@ export class PricingUtils {
 
   private async findPriceButtons(): Promise<Locator[]> {
     const selectors = [
-      this.page.getByRole('button', { name: /price/i }),
-      this.page.getByRole('link', { name: /price/i }),
-      this.page.locator('button:has-text("Price"), a:has-text("Price")'),
+      {
+        name: 'role=button[name~/price/i]',
+        locator: this.page.getByRole('button', { name: /price/i }),
+      },
+      {
+        name: 'role=link[name~/price/i]',
+        locator: this.page.getByRole('link', { name: /price/i }),
+      },
+      {
+        name: 'button/a text Price',
+        locator: this.page.locator('button:has-text("Price"), a:has-text("Price")'),
+      },
     ];
 
     const buttons: Locator[] = [];
-    for (const locator of selectors) {
-      const count = await locator.count().catch(() => 0);
-      for (let index = 0; index < count; index++) {
+    for (const { name, locator } of selectors) {
+      const totalCount = await locator.count().catch(() => 0);
+      let visibleCount = 0;
+      for (let index = 0; index < totalCount; index++) {
         const item = locator.nth(index);
         if (await item.isVisible().catch(() => false)) {
+          visibleCount += 1;
           buttons.push(item);
         }
       }
+
+      console.log(`findPriceButtons selector family "${name}" matched ${totalCount} elements before visibility filtering and ${visibleCount} after filtering.`);
     }
 
     return buttons;
