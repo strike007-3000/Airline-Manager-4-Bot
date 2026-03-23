@@ -20,6 +20,13 @@ interface RouteDiscoveryMatch {
   selector: string;
 }
 
+interface FareUpdateResult {
+  label: string;
+  autoBaseline: number;
+  finalValue: number;
+  changed: boolean;
+}
+
 export class PricingUtils {
   private readonly page: Page;
   private readonly githubStepSummary?: string;
@@ -456,51 +463,167 @@ export class PricingUtils {
   }
 
   private async updateVisiblePriceInputs(controlIndex: number): Promise<boolean> {
-    let updated = false;
     const visibleFareInputs = await this.countVisibleFareInputs();
     console.log(`fare inputs found for route ${controlIndex}: ${visibleFareInputs}`);
 
-    updated = await this.tryUpdatePriceInput(/economy|eco|y/i, this.multipliers.economy) || updated;
-    updated = await this.tryUpdatePriceInput(/business|bus|j/i, this.multipliers.business) || updated;
-    updated = await this.tryUpdatePriceInput(/first|f/i, this.multipliers.first) || updated;
-    updated = await this.tryUpdatePriceInput(/large|cargo large|l/i, this.multipliers.cargoLarge) || updated;
-    updated = await this.tryUpdatePriceInput(/heavy|cargo heavy|h/i, this.multipliers.cargoHeavy) || updated;
+    const autoApplied = await this.applyAutoPricing(controlIndex);
+    if (!autoApplied) {
+      console.log(`Pricing control ${controlIndex} opened, but the Auto baseline could not be confirmed.`);
+      return false;
+    }
 
+    const results: FareUpdateResult[] = [];
+    const passengerFareConfigs = [
+      { label: 'Economy', pattern: /economy|eco|\by\b/i, multiplier: this.multipliers.economy },
+      { label: 'Business', pattern: /business|bus|\bj\b/i, multiplier: this.multipliers.business },
+      { label: 'First', pattern: /first|\bf\b/i, multiplier: this.multipliers.first },
+    ];
+
+    for (const config of passengerFareConfigs) {
+      const result = await this.tryUpdatePriceInput(config.label, config.pattern, config.multiplier);
+      if (result) {
+        results.push(result);
+      }
+    }
+
+    if (results.length === 0) {
+      console.log(`Pricing control ${controlIndex} opened, but no visible passenger fare inputs were available after Auto.`);
+      return false;
+    }
+
+    for (const result of results) {
+      console.log(`route ${controlIndex} ${result.label}: Auto baseline ${result.autoBaseline} -> final ${result.finalValue}${result.changed ? '' : ' (unchanged)'}`);
+    }
+
+    const updated = results.some(result => result.changed);
     if (updated) {
-      const saveButton = this.page.getByRole('button', { name: /save|update|apply|confirm/i }).first();
+      const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
       if (await saveButton.isVisible().catch(() => false)) {
         await saveButton.click();
         await this.page.waitForTimeout(500);
         console.log(`save clicked for route ${controlIndex}.`);
+      } else {
+        console.log(`route ${controlIndex} fares changed, but no Save button was visible.`);
       }
     } else {
-      console.log(`Pricing control ${controlIndex} opened, but no visible fare inputs could be updated.`);
+      console.log(`route ${controlIndex} Auto-based fare targets already matched the visible values; Save was not clicked.`);
     }
 
     return updated;
   }
 
-  private async tryUpdatePriceInput(labelPattern: RegExp, multiplier: number): Promise<boolean> {
+  private async applyAutoPricing(controlIndex: number): Promise<boolean> {
+    const fareInputsBeforeAuto = await this.captureVisibleFareSnapshot();
+    const autoButton = this.page.getByRole('button', { name: /^auto$/i }).first();
+    if (!(await autoButton.isVisible().catch(() => false))) {
+      console.log(`route ${controlIndex} has no visible Auto button in the seat layout.`);
+      return false;
+    }
+
+    await autoButton.click();
+    const autoApplied = await this.waitForAutoFarePopulation(fareInputsBeforeAuto);
+    if (autoApplied) {
+      console.log(`route ${controlIndex} Auto pricing baseline captured.`);
+    } else {
+      console.log(`route ${controlIndex} Auto pricing click did not produce a confirmed fare update.`);
+    }
+
+    return autoApplied;
+  }
+
+  private async tryUpdatePriceInput(label: string, labelPattern: RegExp, multiplier: number): Promise<FareUpdateResult | undefined> {
     const input = await this.findInputByLabel(labelPattern);
     if (!input) {
-      return false;
+      return undefined;
     }
 
+    const currentValue = await this.readNumericInputValue(input);
+    if (!currentValue || currentValue <= 0) {
+      return undefined;
+    }
+
+    const nextValue = Math.max(1, Math.floor((currentValue * multiplier) / 10) * 10);
+    const changed = nextValue !== currentValue;
+
+    if (changed) {
+      await input.click();
+      await input.press('Control+a');
+      await input.fill(nextValue.toString());
+      await input.press('Tab').catch(() => undefined);
+    }
+
+    return {
+      label,
+      autoBaseline: currentValue,
+      finalValue: nextValue,
+      changed,
+    };
+  }
+
+  private async waitForAutoFarePopulation(previousSnapshot: Map<string, number>, timeoutMs = 5000): Promise<boolean> {
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const currentSnapshot = await this.captureVisibleFareSnapshot();
+      if (currentSnapshot.size > 0) {
+        const elapsedMs = Date.now() - startedAt;
+        const hasChangedValue = Array.from(currentSnapshot.entries()).some(([key, value]) => previousSnapshot.get(key) !== value);
+        const hasPopulatedValue = Array.from(currentSnapshot.values()).some(value => value > 0);
+        const faresAppearedAfterAuto = previousSnapshot.size === 0 && hasPopulatedValue;
+        const faresStayedStableAfterAuto = previousSnapshot.size > 0 && hasPopulatedValue && elapsedMs >= 800;
+
+        if (hasChangedValue || faresAppearedAfterAuto || faresStayedStableAfterAuto) {
+          return true;
+        }
+      }
+
+      await this.page.waitForTimeout(200);
+    }
+
+    return false;
+  }
+
+  private async captureVisibleFareSnapshot(): Promise<Map<string, number>> {
+    const snapshot = new Map<string, number>();
+    const selectors = [
+      /economy|eco|\by\b/i,
+      /business|bus|\bj\b/i,
+      /first|\bf\b/i,
+      /large|cargo large|\bl\b/i,
+      /heavy|cargo heavy|\bh\b/i,
+    ];
+
+    for (const selector of selectors) {
+      const input = await this.findInputByLabel(selector);
+      if (!input) {
+        continue;
+      }
+
+      const key = await this.describeInput(input);
+      const value = await this.readNumericInputValue(input);
+      snapshot.set(key, value);
+    }
+
+    return snapshot;
+  }
+
+  private async describeInput(input: Locator): Promise<string> {
+    const [name, id, placeholder, ariaLabel] = await Promise.all([
+      input.getAttribute('name').catch(() => ''),
+      input.getAttribute('id').catch(() => ''),
+      input.getAttribute('placeholder').catch(() => ''),
+      input.getAttribute('aria-label').catch(() => ''),
+    ]);
+
+    return [name, id, placeholder, ariaLabel].filter(Boolean).join('|') || `input-${await input.evaluate(el => (el as HTMLInputElement).type || 'text').catch(() => 'unknown')}`;
+  }
+
+  private async readNumericInputValue(input: Locator): Promise<number> {
     const currentValue = await input.inputValue().catch(() => '');
-    const parsedCurrentValue = Number.parseInt(currentValue.replace(/,/g, ''), 10);
-    if (Number.isNaN(parsedCurrentValue) || parsedCurrentValue <= 0) {
-      return false;
-    }
-
-    const nextValue = Math.max(1, Math.floor(parsedCurrentValue * multiplier));
-    if (nextValue === parsedCurrentValue) {
-      return false;
-    }
-
-    await input.click();
-    await input.press('Control+a');
-    await input.fill(nextValue.toString());
-    return true;
+    const normalizedValue = currentValue.replace(/,/g, '').trim();
+    const parsedCurrentValue = Number.parseInt(normalizedValue, 10);
+    return Number.isNaN(parsedCurrentValue) ? 0 : parsedCurrentValue;
   }
 
   private async findInputByLabel(labelPattern: RegExp): Promise<Locator | undefined> {
