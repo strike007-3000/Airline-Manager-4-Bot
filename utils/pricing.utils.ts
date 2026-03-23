@@ -10,6 +10,11 @@ interface PriceMultipliers {
   cargoHeavy: number;
 }
 
+interface RoutesReadySignal {
+  description: string;
+  locator: Locator;
+}
+
 export class PricingUtils {
   private readonly page: Page;
   private readonly githubStepSummary?: string;
@@ -29,6 +34,44 @@ export class PricingUtils {
       cargoLarge: this.getMultiplierFromPercent('EASY_MODE_CARGO_LARGE_MULTIPLIER_PERCENT', 110),
       cargoHeavy: this.getMultiplierFromPercent('EASY_MODE_CARGO_HEAVY_MULTIPLIER_PERCENT', 108),
     };
+  }
+
+  public async waitForRoutesPageReady(timeoutMs = 5000): Promise<boolean> {
+    const readySignals: RoutesReadySignal[] = [
+      {
+        description: 'at least one route row is visible',
+        locator: this.page.locator('table tr:has(button:has-text("Price")), table tr:has(a:has-text("Price")), table tbody tr').first(),
+      },
+      {
+        description: 'routes table/container is attached',
+        locator: this.page.locator('table:has(button:has-text("Price")), table:has(a:has-text("Price")), #routes, .routes, .table-responsive').first(),
+      },
+      {
+        description: 'route action area has rendered',
+        locator: this.page.locator('button:has-text("Price"), a:has-text("Price"), [onclick*="price" i], [data-testid*="route" i]').first(),
+      },
+    ];
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      for (const signal of readySignals) {
+        if (await signal.locator.isVisible().catch(() => false)) {
+          console.log(`Routes page readiness satisfied: ${signal.description}.`);
+          return true;
+        }
+
+        const isAttached = await signal.locator.count().then(count => count > 0).catch(() => false);
+        if (isAttached && signal.description === 'routes table/container is attached') {
+          console.log(`Routes page readiness satisfied: ${signal.description}.`);
+          return true;
+        }
+      }
+
+      await this.page.waitForTimeout(250);
+    }
+
+    console.log(`Routes page readiness timed out after ${timeoutMs}ms; skipping pricing update to avoid blind interactions.`);
+    return false;
   }
 
   public async updateDailyEasyModePrices(): Promise<void> {

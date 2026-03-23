@@ -46,8 +46,11 @@ test('All Operations', async ({ page }) => {
   await generalUtils.closePopupIfOpen();
 
   await page.locator('#mapRoutes').getByRole('img').click();
-  await GeneralUtils.sleep(2500);
-  await pricingUtils.updateDailyEasyModePrices();
+  const routesPageReadyForPricing = await pricingUtils.waitForRoutesPageReady();
+  if (routesPageReadyForPricing) {
+    await pricingUtils.updateDailyEasyModePrices();
+  }
+  await generalUtils.closePopupIfOpen();
   await fleetUtils.departPlanes();
 
   await page.close();
