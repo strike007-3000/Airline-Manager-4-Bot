@@ -36,14 +36,8 @@ export class FuelUtils {
     maxFuelPrice: number;
     maxCo2Price: number;
     minimumFuelCoverHours: number;
-    targetFuelCoverHours: number;
-    aggressiveFuelCoverHours: number;
     minimumCo2CoverHours: number;
-    targetCo2CoverHours: number;
-    aggressiveCo2CoverHours: number;
     maxPriceHistoryEntries: number;
-    favorableFuelPercentile: number;
-    favorableCo2Percentile: number;
     averageFuelBurnPerDeparture: number;
     averageCo2BurnPerDeparture: number;
     marketHistoryFile: string;
@@ -55,14 +49,8 @@ export class FuelUtils {
         this.maxFuelPrice = ConfigUtils.requireNumber('MAX_FUEL_PRICE');
         this.maxCo2Price = ConfigUtils.requireNumber('MAX_CO2_PRICE');
         this.minimumFuelCoverHours = ConfigUtils.optionalNumber('MINIMUM_FUEL_COVER_HOURS', 12);
-        this.targetFuelCoverHours = ConfigUtils.optionalNumber('TARGET_FUEL_COVER_HOURS', 36);
-        this.aggressiveFuelCoverHours = ConfigUtils.optionalNumber('AGGRESSIVE_FUEL_COVER_HOURS', 72);
         this.minimumCo2CoverHours = ConfigUtils.optionalNumber('MINIMUM_CO2_COVER_HOURS', 24);
-        this.targetCo2CoverHours = ConfigUtils.optionalNumber('TARGET_CO2_COVER_HOURS', 72);
-        this.aggressiveCo2CoverHours = ConfigUtils.optionalNumber('AGGRESSIVE_CO2_COVER_HOURS', 120);
         this.maxPriceHistoryEntries = ConfigUtils.optionalNumber('MAX_PRICE_HISTORY_ENTRIES', 200);
-        this.favorableFuelPercentile = ConfigUtils.optionalNumber('FAVORABLE_FUEL_PERCENTILE', 35);
-        this.favorableCo2Percentile = ConfigUtils.optionalNumber('FAVORABLE_CO2_PERCENTILE', 35);
         this.averageFuelBurnPerDeparture = ConfigUtils.optionalNumber('AVERAGE_FUEL_BURN_PER_DEPARTURE', 250000);
         this.averageCo2BurnPerDeparture = ConfigUtils.optionalNumber('AVERAGE_CO2_BURN_PER_DEPARTURE', 100000);
         this.marketHistoryFile = ConfigUtils.optionalString('MARKET_HISTORY_FILE', path.join(process.cwd(), '.cache', 'market-history.json'));
@@ -131,12 +119,8 @@ export class FuelUtils {
             currentPrice: state.currentPrice,
             currentHolding: state.currentHolding,
             emptyCapacity: state.emptyCapacity,
-            priceCap: this.maxFuelPrice,
             percentile,
-            favorablePercentile: this.favorableFuelPercentile,
             minimumCoverHours: this.minimumFuelCoverHours,
-            targetCoverHours: this.targetFuelCoverHours,
-            aggressiveCoverHours: this.aggressiveFuelCoverHours,
             estimatedUsagePerHour,
         });
 
@@ -161,12 +145,8 @@ export class FuelUtils {
             currentPrice: state.currentPrice,
             currentHolding: state.currentHolding,
             emptyCapacity: state.emptyCapacity,
-            priceCap: this.maxCo2Price,
             percentile,
-            favorablePercentile: this.favorableCo2Percentile,
             minimumCoverHours: this.minimumCo2CoverHours,
-            targetCoverHours: this.targetCo2CoverHours,
-            aggressiveCoverHours: this.aggressiveCo2CoverHours,
             estimatedUsagePerHour,
         });
 
@@ -236,8 +216,6 @@ export class FuelUtils {
         return null;
     }
 
-
-
     private async readMarketState() {
         return {
             currentPrice: await this.readInteger(this.page.getByText('Total price$').locator('b > span')),
@@ -273,13 +251,18 @@ export class FuelUtils {
             return { fuel: [], co2: [] };
         }
 
-        const rawContent = fs.readFileSync(this.marketHistoryFile, 'utf8');
-        const parsedContent = JSON.parse(rawContent) as Partial<PriceHistoryFile>;
+        try {
+            const rawContent = fs.readFileSync(this.marketHistoryFile, 'utf8');
+            const parsedContent = JSON.parse(rawContent) as Partial<PriceHistoryFile>;
 
-        return {
-            fuel: parsedContent.fuel ?? [],
-            co2: parsedContent.co2 ?? [],
-        };
+            return {
+                fuel: parsedContent.fuel ?? [],
+                co2: parsedContent.co2 ?? [],
+            };
+        } catch (error) {
+            console.warn(`Failed to read market history file ${this.marketHistoryFile}. Resetting cache.`, error);
+            return { fuel: [], co2: [] };
+        }
     }
 
     private calculatePricePercentile(history: number[], currentPrice: number): number {
@@ -299,6 +282,14 @@ export class FuelUtils {
         return Math.max(departuresPerHour * averageBurnPerDeparture, 1);
     }
 
+    private estimateDepartingUsage(resource: ResourceType): number {
+        const snapshot = this.plannedDepartureSnapshot;
+        const departuresInNext24Hours = Math.max(snapshot?.departuresInNext24Hours ?? 0, 1);
+        const averageBurnPerDeparture = resource === 'fuel' ? this.averageFuelBurnPerDeparture : this.averageCo2BurnPerDeparture;
+
+        return departuresInNext24Hours * averageBurnPerDeparture;
+    }
+
     private calculateCoverHours(currentHolding: number, estimatedUsagePerHour: number): number {
         if (currentHolding <= 0) {
             return 0;
@@ -312,64 +303,36 @@ export class FuelUtils {
         currentPrice: number;
         currentHolding: number;
         emptyCapacity: number;
-        priceCap: number;
         percentile: number;
-        favorablePercentile: number;
         minimumCoverHours: number;
-        targetCoverHours: number;
-        aggressiveCoverHours: number;
         estimatedUsagePerHour: number;
     }): MarketDecision {
         const currentCoverHours = this.calculateCoverHours(input.currentHolding, input.estimatedUsagePerHour);
         const isNegativeCo2 = input.resource === 'co2' && input.currentHolding < 0;
-        const favorablePrice = input.currentPrice <= input.priceCap;
-        const favorablePercentile = input.percentile <= input.favorablePercentile;
-        const emergency = isNegativeCo2 || currentCoverHours < input.minimumCoverHours;
+        if (isNegativeCo2) {
+            const deficit = Math.abs(input.currentHolding);
+            const departingUsage = this.estimateDepartingUsage(input.resource);
+            const quantity = Math.min(Math.max(deficit + departingUsage, 0), input.emptyCapacity + deficit);
 
-        if (emergency) {
+            return {
+                shouldBuy: quantity > 0,
+                quantity,
+                reason: 'CO2 holding is negative, buying enough to clear the deficit and cover upcoming departures.',
+            };
+        }
+
+        if (currentCoverHours < input.minimumCoverHours) {
             return {
                 shouldBuy: input.emptyCapacity > 0,
                 quantity: input.emptyCapacity,
-                reason: isNegativeCo2
-                    ? 'CO2 holding is negative, buying to full remaining capacity.'
-                    : `${input.resource.toUpperCase()} cover is below the minimum threshold, buying to full remaining capacity.`,
-            };
-        }
-
-        if (!favorablePrice && !favorablePercentile) {
-            return {
-                shouldBuy: false,
-                quantity: 0,
-                reason: `${input.resource.toUpperCase()} price is not favorable and minimum cover is safe.`,
-            };
-        }
-
-        let targetCoverHours = input.targetCoverHours;
-        let reason = `${input.resource.toUpperCase()} top-up to target cover.`;
-
-        if (favorablePercentile) {
-            targetCoverHours = input.aggressiveCoverHours;
-            reason = `${input.resource.toUpperCase()} price percentile is favorable, buying aggressively in bulk.`;
-        } else if (favorablePrice) {
-            reason = `${input.resource.toUpperCase()} price is below cap, topping up to target cover.`;
-        }
-
-        const targetUnits = Math.ceil(targetCoverHours * input.estimatedUsagePerHour);
-        const shortfall = Math.max(targetUnits - input.currentHolding, 0);
-        const quantity = Math.min(Math.max(shortfall, 0), input.emptyCapacity);
-
-        if (quantity <= 0) {
-            return {
-                shouldBuy: false,
-                quantity: 0,
-                reason: `${input.resource.toUpperCase()} cover target already satisfied.`,
+                reason: `${input.resource.toUpperCase()} cover is below the minimum threshold, buying to full remaining capacity.`,
             };
         }
 
         return {
-            shouldBuy: true,
-            quantity,
-            reason,
+            shouldBuy: false,
+            quantity: 0,
+            reason: `${input.resource.toUpperCase()} cover is healthy, skipping additional purchases.`,
         };
     }
 
