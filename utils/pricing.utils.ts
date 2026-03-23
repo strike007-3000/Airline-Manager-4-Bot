@@ -13,7 +13,6 @@ interface PriceMultipliers {
 export class PricingUtils {
   private readonly page: Page;
   private readonly githubStepSummary?: string;
-  private readonly priceUpdateHoursUtc: number[];
   private readonly maxPriceUpdatesPerRun: number;
   private readonly gameMode: string;
   private readonly multipliers: PriceMultipliers;
@@ -21,7 +20,6 @@ export class PricingUtils {
   constructor(page: Page) {
     this.page = page;
     this.githubStepSummary = process.env.GITHUB_STEP_SUMMARY;
-    this.priceUpdateHoursUtc = this.getPriceUpdateHoursUtc();
     this.maxPriceUpdatesPerRun = ConfigUtils.optionalNumber('MAX_PRICE_UPDATES_PER_RUN', 12);
     this.gameMode = ConfigUtils.optionalString('GAME_MODE', 'easy').toLowerCase();
     this.multipliers = {
@@ -39,13 +37,7 @@ export class PricingUtils {
       return;
     }
 
-    const currentUtcHour = new Date().getUTCHours();
-    if (!this.priceUpdateHoursUtc.includes(currentUtcHour)) {
-      console.log(`Dynamic pricing skipped because current UTC hour ${currentUtcHour} does not match configured pricing hours ${this.priceUpdateHoursUtc.join(', ')}.`);
-      return;
-    }
-
-    console.log('Daily Easy mode ticket-price update started...');
+    console.log('Pre-departure Easy mode ticket-price check started...');
 
     const priceButtons = await this.findPriceButtons();
     let updatedFlights = 0;
@@ -72,11 +64,11 @@ export class PricingUtils {
     }
 
     const summary = updatedFlights > 0
-      ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights using Easy mode multipliers.`
-      : '## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update during the daily pricing window.';
+      ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights using Easy mode multipliers before departures.`
+      : '## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures.';
 
     this.appendSummary(summary);
-    console.log(`Daily Easy mode ticket-price update finished. Updated flights: ${updatedFlights}.`);
+    console.log(`Pre-departure Easy mode ticket-price check finished. Updated flights: ${updatedFlights}.`);
   }
 
   private async findPriceButtons(): Promise<Locator[]> {
@@ -195,29 +187,5 @@ export class PricingUtils {
 
   private getMultiplierFromPercent(name: string, defaultPercent: number): number {
     return ConfigUtils.optionalNumber(name, defaultPercent) / 100;
-  }
-
-  private getPriceUpdateHoursUtc(): number[] {
-    const configuredHours = ConfigUtils.optionalString('PRICE_UPDATE_HOURS_UTC');
-    if (configuredHours) {
-      return configuredHours
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .map((value) => this.parseHourValue(value, 'PRICE_UPDATE_HOURS_UTC'))
-        .filter((value, index, values) => values.indexOf(value) === index)
-        .sort((left, right) => left - right);
-    }
-
-    return [ConfigUtils.optionalNumber('PRICE_UPDATE_HOUR_UTC', 23)];
-  }
-
-  private parseHourValue(value: string, variableName: string): number {
-    const parsedValue = Number.parseInt(value, 10);
-    if (Number.isNaN(parsedValue) || parsedValue < 0 || parsedValue > 23) {
-      throw new Error(`Environment variable ${variableName} must contain UTC hours between 0 and 23.`);
-    }
-
-    return parsedValue;
   }
 }

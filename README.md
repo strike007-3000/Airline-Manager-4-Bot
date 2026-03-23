@@ -40,8 +40,6 @@ Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** and
 - `MARKET_HISTORY_FILE`: optional local cache path such as `.cache/market-history.json`
 - `GAME_MODE`: `easy`
 - `REPAIR_THRESHOLD_PERCENT`: optional wear threshold for bulk repairs, default `30`
-- `PRICE_UPDATE_HOUR_UTC`: `22`
-- `PRICE_UPDATE_HOURS_UTC`: optional comma-separated list such as `22,0,2`
 - `MAX_PRICE_UPDATES_PER_RUN`: `12`
 - `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT`: `110`
 - `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT`: `108`
@@ -56,9 +54,8 @@ You said you do **not** want to maintain route-by-route pricing JSON.
 This version now works differently:
 
 - it does **not** require any route list.
-- it only runs during your configured pricing hour window, controlled by `PRICE_UPDATE_HOUR_UTC` or `PRICE_UPDATE_HOURS_UTC`.
 - it only tries to update flights that look **not yet departed** on the routes page.
-- it applies simple Easy mode multipliers to the visible price inputs it can find.
+- it applies simple Easy mode multipliers to the visible price inputs it can find every run, right before departures.
 
 Default Easy mode multipliers:
 - Economy: `110%`
@@ -72,11 +69,9 @@ Optional cargo multipliers if you use cargo aircraft:
 ### 6. What the pricing assistant does
 
 The pricing assistant now follows a simpler Easy mode flow:
-- it checks the current UTC hour
-- it only runs when the hour matches `PRICE_UPDATE_HOUR_UTC`, or any hour in `PRICE_UPDATE_HOURS_UTC`
 - it looks for price editors on the routes page
 - it skips rows that appear to already be departed
-- it updates up to `MAX_PRICE_UPDATES_PER_RUN` flights in that daily window
+- it updates up to `MAX_PRICE_UPDATES_PER_RUN` flights before the bot departs planes
 
 ### 7. Enable GitHub Actions
 
@@ -90,7 +85,7 @@ Open the **Actions** tab in your fork and enable workflows.
 4. Wait for the job to finish.
 5. Open the run and read the **step summary**.
 
-That run should update the ticket prices of not-yet-departed Easy mode flights during the daily pricing window.
+That run should update the ticket prices of not-yet-departed Easy mode flights before the departure step.
 
 ### 9. Let the schedule run automatically
 
@@ -114,6 +109,8 @@ That means if a flight becomes blocked because of a due A-Check or because wear 
 
 Bulk repairs now default to `30%` wear, configurable with `REPAIR_THRESHOLD_PERCENT`.
 
+The pricing step also runs immediately before departures on every workflow run, so there is no longer a separate UTC pricing-hour gate to configure.
+
 ## Free-tier guidance
 
 This setup is designed to stay inexpensive on GitHub Actions:
@@ -124,7 +121,6 @@ This setup is designed to stay inexpensive on GitHub Actions:
 - No paid APIs.
 - Chromium only.
 - No route-optimizer scan or route JSON maintenance.
-- Price updates are limited to one UTC hour per day unless you explicitly configure multiple UTC pricing hours.
 - Updates are capped by `MAX_PRICE_UPDATES_PER_RUN`.
 
 If you want to keep usage even lower:
@@ -137,21 +133,19 @@ If you want to keep usage even lower:
 2. Add the `EMAIL` and `PASSWORD` secrets.
 3. Add `MAX_FUEL_PRICE` and `MAX_CO2_PRICE`.
 4. Add `GAME_MODE=easy`.
-5. Add `PRICE_UPDATE_HOUR_UTC=22` if you want the default nightly run to line up with `23:00 CET`.
-6. Add `MAX_PRICE_UPDATES_PER_RUN=12`.
-7. Add `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT=110`.
-8. Add `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT=108`.
-9. Add `EASY_MODE_FIRST_MULTIPLIER_PERCENT=106`.
-10. Enable GitHub Actions.
-11. Run the workflow manually once near one of your configured pricing hours.
-12. If everything looks good, leave the schedule enabled.
+5. Add `MAX_PRICE_UPDATES_PER_RUN=12`.
+6. Add `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT=110`.
+7. Add `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT=108`.
+8. Add `EASY_MODE_FIRST_MULTIPLIER_PERCENT=106`.
+9. Enable GitHub Actions.
+10. Run the workflow manually once.
+11. If everything looks good, leave the schedule enabled.
 
 ## Notes
 - Language of your game must be **English** for this bot to work.
 - Trigger times may vary due to heavy loads on GitHub Actions.
 - To change the schedule, edit the **cron** expressions under **schedule** in `.github/workflows/playwright.yml`. Use [crontab.guru](https://crontab.guru/) to generate your desired cron expression.
 - GitHub Actions cron itself is UTC, so the default workflow already uses the UTC equivalents for the listed CET run times.
-- If you want pricing to run at multiple moments in the same day, set `PRICE_UPDATE_HOURS_UTC` to the UTC hours that match your preferred CET schedule.
 - This repository can be public as long as your login details stay in GitHub **Actions secrets** and your thresholds stay in GitHub **Actions variables**. Do not commit credentials or personal values directly into the repository.
 - If you still prefer not to expose the code publicly, you can clone this project and commit it to a private repository instead.
 - For questions, reach out on Discord: `muhittin852`.
