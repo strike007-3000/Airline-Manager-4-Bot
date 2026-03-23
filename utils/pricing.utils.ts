@@ -40,22 +40,26 @@ export class PricingUtils {
     console.log('Pre-departure Easy mode ticket-price check started...');
 
     const priceButtons = await this.findPriceButtons();
+    console.log(`Found ${priceButtons.length} visible price controls on the routes page.`);
     let updatedFlights = 0;
+    let inspectedFlights = 0;
 
     for (const button of priceButtons) {
       if (updatedFlights >= this.maxPriceUpdatesPerRun) {
         break;
       }
 
+      inspectedFlights += 1;
       const rowText = await this.readRowText(button);
       if (this.hasFlightAlreadyDeparted(rowText)) {
+        console.log(`Skipping pricing control ${inspectedFlights} because the flight already appears departed: ${rowText.slice(0, 120)}`);
         continue;
       }
 
       await button.click();
       await this.page.waitForTimeout(500);
 
-      const changedAnyPrice = await this.updateVisiblePriceInputs();
+      const changedAnyPrice = await this.updateVisiblePriceInputs(inspectedFlights);
       await this.closePopupIfOpen();
 
       if (changedAnyPrice) {
@@ -65,6 +69,7 @@ export class PricingUtils {
 
     const summary = updatedFlights > 0
       ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights using Easy mode multipliers before departures.`
+      : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures. Inspected ${inspectedFlights} pricing controls.`;
       : '## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures.';
 
     this.appendSummary(summary);
@@ -101,7 +106,7 @@ export class PricingUtils {
     return rowText.includes('departed') || rowText.includes('airborne') || rowText.includes('arrived');
   }
 
-  private async updateVisiblePriceInputs(): Promise<boolean> {
+  private async updateVisiblePriceInputs(controlIndex: number): Promise<boolean> {
     let updated = false;
 
     updated = await this.tryUpdatePriceInput(/economy|eco|y/i, this.multipliers.economy) || updated;
@@ -116,6 +121,8 @@ export class PricingUtils {
         await saveButton.click();
         await this.page.waitForTimeout(500);
       }
+    } else {
+      console.log(`Pricing control ${controlIndex} opened, but no visible fare inputs could be updated.`);
     }
 
     return updated;
@@ -161,6 +168,17 @@ export class PricingUtils {
     for (const selector of fallbackSelectors) {
       const locator = this.page.locator(selector).first();
       const descriptor = `${await locator.getAttribute('name').catch(() => '')} ${await locator.getAttribute('id').catch(() => '')} ${await locator.getAttribute('placeholder').catch(() => '')}`.toLowerCase();
+      if (descriptor && labelPattern.test(descriptor) && await locator.isVisible().catch(() => false)) {
+        return locator;
+      }
+    }
+
+    const popupInputs = this.page.locator('#popup input:visible, .modal input:visible');
+    const popupInputCount = await popupInputs.count().catch(() => 0);
+    for (let index = 0; index < popupInputCount; index++) {
+      const locator = popupInputs.nth(index);
+      const nearbyText = await locator.locator('xpath=ancestor::*[self::div or self::td or self::label][1]').innerText().catch(() => '');
+      const descriptor = `${nearbyText} ${await locator.getAttribute('name').catch(() => '')} ${await locator.getAttribute('id').catch(() => '')} ${await locator.getAttribute('placeholder').catch(() => '')}`.toLowerCase();
       if (descriptor && labelPattern.test(descriptor) && await locator.isVisible().catch(() => false)) {
         return locator;
       }

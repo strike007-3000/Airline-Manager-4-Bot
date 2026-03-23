@@ -162,6 +162,7 @@ The logic now:
 - if fuel or CO2 is at or below the configured market-price threshold, it buys to full remaining capacity immediately
 - maintains minimum cover in hours
 - if fuel or CO2 falls below the configured minimum cover threshold, it buys to full remaining capacity immediately
+- if CO2 is already negative while the market is above the configured threshold, it buys a buffered top-up (at least enough to clear the deficit, otherwise about half the remaining capacity) before departures
 - if CO2 is already negative while the market is above the configured threshold, it keeps buying until the deficit is cleared
 - skips additional purchases whenever the current cover is already healthy
 

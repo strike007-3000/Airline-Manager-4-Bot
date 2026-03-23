@@ -314,6 +314,12 @@ export class FuelUtils {
         }
 
         if (isNegativeCo2) {
+            const bufferedQuantity = this.calculateNegativeCo2BufferPurchase(input.currentHolding, input.emptyCapacity);
+
+            return {
+                shouldBuy: bufferedQuantity > 0,
+                quantity: bufferedQuantity,
+                reason: 'CO2 holding is negative, buying a buffered amount before departures even though the market is above the configured threshold.',
             const deficit = Math.abs(input.currentHolding);
 
             return {
@@ -364,11 +370,13 @@ export class FuelUtils {
                 return;
             }
 
+            const additionalQuantity = this.calculateNegativeCo2BufferPurchase(state.currentHolding, state.emptyCapacity);
             const additionalQuantity = Math.abs(state.currentHolding);
             if (additionalQuantity <= 0) {
                 return;
             }
 
+            console.log(`CO2 holding is still negative after purchase (${state.currentHolding}). Buying ${additionalQuantity} more as a buffered top-up.`);
             console.log(`CO2 holding is still negative after purchase (${state.currentHolding}). Buying ${additionalQuantity} more to clear the deficit.`);
             await this.page.getByPlaceholder('Amount to purchase').click();
             await this.page.getByPlaceholder('Amount to purchase').press('Control+a');
@@ -376,5 +384,12 @@ export class FuelUtils {
             await this.page.getByRole('button', { name: ' Purchase' }).click();
             await GeneralUtils.sleep(1000);
         }
+    }
+
+    private calculateNegativeCo2BufferPurchase(currentHolding: number, emptyCapacity: number): number {
+        const deficit = Math.abs(Math.min(currentHolding, 0));
+        const halfRemainingCapacity = Math.ceil(Math.max(emptyCapacity, 0) * 0.5);
+
+        return Math.min(Math.max(deficit, halfRemainingCapacity), Math.max(emptyCapacity, 0));
     }
 }
