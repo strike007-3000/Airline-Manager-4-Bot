@@ -33,6 +33,11 @@ interface PricingEditorState {
   saveButton: Locator;
 }
 
+interface RouteEntrySelectorFamily {
+  label: string;
+  selector: string;
+}
+
 export class PricingUtils {
   private readonly page: Page;
   private readonly githubStepSummary?: string;
@@ -40,6 +45,7 @@ export class PricingUtils {
   private readonly maxRouteDiscoveryAttemptsPerRun: number;
   private readonly gameMode: string;
   private readonly multipliers: PriceMultipliers;
+  private routeListDiagnosticsLogged = false;
 
   constructor(page: Page) {
     this.page = page;
@@ -218,35 +224,13 @@ export class PricingUtils {
       return directRouteLinks;
     }
 
-    const routeRows = await this.findRouteRows(routeListMatch);
-    if (routeRows.length === 0) {
-      console.log('findPriceButtons fallback found no valid route rows after direct route-link discovery failed.');
-      return [];
+    if (!this.routeListDiagnosticsLogged) {
+      await this.logScopedRouteListDiagnostics(routeListMatch.container, routeListMatch.selector);
+      this.routeListDiagnosticsLogged = true;
     }
 
-    const routeLinks: Locator[] = [];
-
-    for (let index = 0; index < routeRows.length; index++) {
-      const row = routeRows[index];
-      const rowText = await this.getRouteRowText(row);
-      if (!rowText) {
-        console.log(`findPriceButtons skipped fallback row ${index + 1} because readRowText returned no meaningful text.`);
-        continue;
-      }
-
-      const routeLink = await this.findRouteLinkInRow(row);
-      if (!routeLink) {
-        console.log(`findPriceButtons skipped fallback row ${index + 1} because no visible route details link was found: ${rowText.slice(0, 200)}`);
-        continue;
-      }
-
-      const linkText = await this.readVisibleText(routeLink);
-      routeLinks.push(routeLink);
-      console.log(`findPriceButtons fallback row ${index + 1} route link: ${linkText || rowText.slice(0, 120)}`);
-    }
-
-    console.log(`findPriceButtons collected ${routeLinks.length} visible route links from ${routeRows.length} fallback route rows.`);
-    return routeLinks;
+    console.log('findPriceButtons skipping pricing quickly because no suitable clickable route entry was found in the scoped route-list container.');
+    return [];
   }
 
   private async findRouteRows(routeListMatch?: RouteDiscoveryMatch): Promise<Locator[]> {
@@ -270,7 +254,7 @@ export class PricingUtils {
       ':scope > [class*="route" i]',
       ':scope > [class*="flight" i]',
       ':scope > div:has-text("#ST-")',
-      ':scope > *:has(a)',
+      ':scope > *:has(a, button, [role="link"], [role="button"], [onclick])',
     ];
     const seenRows = new Set<string>();
     let selectorFamiliesExamined = 0;
@@ -337,15 +321,18 @@ export class PricingUtils {
 
 
   private async findRouteLinksInContainer(container: Locator, containerSelector: string): Promise<Locator[]> {
-    const candidateSelectors = [
-      ':scope a.text-info',
-      ':scope a.text-primary',
-      ':scope a.font-blue',
-      ':scope a[style*="color: blue" i]',
-      ':scope a[href*="route" i]',
-      ':scope [role="link"]',
-      ':scope a',
-    ];
+    const routeEntrySelectorFamily = await this.selectRouteEntrySelectorFamily(container, containerSelector);
+    if (!routeEntrySelectorFamily) {
+      if (!this.routeListDiagnosticsLogged) {
+        await this.logScopedRouteListDiagnostics(container, containerSelector);
+        this.routeListDiagnosticsLogged = true;
+      }
+
+      console.log(`findRouteLinksInContainer found no suitable clickable selector family inside "${containerSelector}"; pricing will be skipped for this route list.`);
+      return [];
+    }
+
+    const candidateSelectors = [routeEntrySelectorFamily.selector];
     const routeLinks: Locator[] = [];
     const seenLinks = new Set<string>();
     let selectorFamiliesExamined = 0;
@@ -398,6 +385,175 @@ export class PricingUtils {
     }
 
     return routeLinks;
+  }
+
+  private async selectRouteEntrySelectorFamily(container: Locator, containerSelector: string): Promise<RouteEntrySelectorFamily | undefined> {
+    const selectorFamilies: RouteEntrySelectorFamily[] = [
+      { label: 'anchor', selector: ':scope a' },
+      { label: 'button', selector: ':scope button' },
+      { label: 'role=link', selector: ':scope [role="link"]' },
+      { label: 'role=button', selector: ':scope [role="button"]' },
+      { label: 'onclick', selector: ':scope [onclick]' },
+    ];
+
+    for (const family of selectorFamilies) {
+      const candidates = container.locator(family.selector);
+      const candidateCount = await candidates.count().catch(() => 0);
+      if (candidateCount === 0) {
+        continue;
+      }
+
+      for (let index = 0; index < candidateCount; index++) {
+        const candidate = candidates.nth(index);
+        if (!(await candidate.isVisible().catch(() => false))) {
+          continue;
+        }
+
+        if (await this.isLikelyRouteEntryCandidate(candidate)) {
+          console.log(`findRouteLinksInContainer selected route entry selector family "${family.label}" (${family.selector}) inside "${containerSelector}".`);
+          return family;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private async logScopedRouteListDiagnostics(container: Locator, containerSelector: string): Promise<void> {
+    const selectorFamilies: RouteEntrySelectorFamily[] = [
+      { label: 'a', selector: ':scope a' },
+      { label: 'button', selector: ':scope button' },
+      { label: 'role="link"', selector: ':scope [role="link"]' },
+      { label: 'role="button"', selector: ':scope [role="button"]' },
+      { label: 'onclick', selector: ':scope [onclick]' },
+    ];
+    const elementSampleCap = 3;
+    const textSampleCap = 4;
+
+    const counts = await Promise.all(selectorFamilies.map(async family => ({
+      label: family.label,
+      count: await this.countVisibleElements(container.locator(family.selector)),
+    })));
+    console.log(`Scoped route-list diagnostics for "${containerSelector}": ${counts.map(({ label, count }) => `${label}=${count}`).join(', ')}`);
+
+    const candidateSamples: string[] = [];
+    for (const family of selectorFamilies) {
+      if (candidateSamples.length >= elementSampleCap) {
+        break;
+      }
+
+      const candidates = container.locator(family.selector);
+      const candidateCount = await candidates.count().catch(() => 0);
+      for (let index = 0; index < candidateCount && candidateSamples.length < elementSampleCap; index++) {
+        const candidate = candidates.nth(index);
+        if (!(await candidate.isVisible().catch(() => false))) {
+          continue;
+        }
+
+        if (!(await this.hasMeaningfulRouteContext(candidate))) {
+          continue;
+        }
+
+        candidateSamples.push(await this.describeRouteCandidate(candidate, family.label));
+      }
+    }
+
+    if (candidateSamples.length > 0) {
+      console.log(`Scoped route-list clickable samples: ${candidateSamples.join(' | ')}`);
+    } else {
+      console.log('Scoped route-list clickable samples: none of the visible candidates looked route-related.');
+    }
+
+    const nearbyTextSamples = await this.collectNearbyTextSamples(container, textSampleCap);
+    if (nearbyTextSamples.length > 0) {
+      console.log(`Scoped route-list nearby text samples: ${nearbyTextSamples.join(' | ')}`);
+    } else {
+      console.log('Scoped route-list nearby text samples: no visible route-adjacent text matches were found.');
+    }
+  }
+
+  private async countVisibleElements(locator: Locator): Promise<number> {
+    const count = await locator.count().catch(() => 0);
+    let visibleCount = 0;
+
+    for (let index = 0; index < count; index++) {
+      if (await locator.nth(index).isVisible().catch(() => false)) {
+        visibleCount += 1;
+      }
+    }
+
+    return visibleCount;
+  }
+
+  private async describeRouteCandidate(candidate: Locator, familyLabel: string): Promise<string> {
+    const [tagName, text, className, id, href, role, parentSample] = await Promise.all([
+      candidate.evaluate(el => el.tagName.toLowerCase()).catch(() => ''),
+      this.readVisibleText(candidate),
+      candidate.getAttribute('class').catch(() => ''),
+      candidate.getAttribute('id').catch(() => ''),
+      candidate.getAttribute('href').catch(() => ''),
+      candidate.getAttribute('role').catch(() => ''),
+      this.getContainerTextSample(candidate),
+    ]);
+
+    return `[${familyLabel}] tag=${tagName || '-'} text=${JSON.stringify(text.slice(0, 80))} class=${JSON.stringify((className || '').slice(0, 80))} id=${JSON.stringify((id || '').slice(0, 40))} href=${JSON.stringify((href || '').slice(0, 120))} role=${JSON.stringify((role || '').slice(0, 40))} parent=${JSON.stringify(parentSample.slice(0, 120))}`;
+  }
+
+  private async collectNearbyTextSamples(container: Locator, sampleCap: number): Promise<string[]> {
+    const textBearingElements = container.locator(':scope span, :scope div, :scope td, :scope p, :scope li, :scope a, :scope button');
+    const elementCount = await textBearingElements.count().catch(() => 0);
+    const samples: string[] = [];
+    const seenTexts = new Set<string>();
+
+    for (let index = 0; index < elementCount && samples.length < sampleCap; index++) {
+      const element = textBearingElements.nth(index);
+      if (!(await element.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      const text = await this.readVisibleText(element);
+      if (!text || text.length < 3) {
+        continue;
+      }
+
+      if (!(/#ST-\d{3,}/i.test(text) || /[A-Z]{3}\s*-\s*[A-Z]{3}/.test(text) || /\bDepart\b/i.test(text))) {
+        continue;
+      }
+
+      const normalized = text.slice(0, 140);
+      if (seenTexts.has(normalized)) {
+        continue;
+      }
+
+      seenTexts.add(normalized);
+      samples.push(JSON.stringify(normalized));
+    }
+
+    return samples;
+  }
+
+  private async hasMeaningfulRouteContext(candidate: Locator): Promise<boolean> {
+    const text = await this.readVisibleText(candidate);
+    if (this.isLikelyRouteLinkText(text)) {
+      return true;
+    }
+
+    const parentSample = await this.getContainerTextSample(candidate);
+    return /#ST-\d{3,}/i.test(parentSample) || /[A-Z]{3}\s*-\s*[A-Z]{3}/.test(parentSample) || /\bDepart\b/i.test(parentSample);
+  }
+
+  private async isLikelyRouteEntryCandidate(candidate: Locator): Promise<boolean> {
+    const linkText = await this.readVisibleText(candidate);
+    if (this.isLikelyRouteLinkText(linkText)) {
+      return true;
+    }
+
+    const sampleText = await this.getContainerTextSample(candidate);
+    const hasDepartAnchor = /\bdepart\b/i.test(sampleText);
+    const hasRouteNumber = /#ST-\d{3,}/i.test(sampleText);
+    const hasRoutePattern = /[A-Z]{3}\s*-\s*[A-Z]{3}/.test(sampleText);
+
+    return hasDepartAnchor && (hasRouteNumber || hasRoutePattern);
   }
 
   private isLikelyRouteLinkText(text: string): boolean {
