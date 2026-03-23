@@ -27,6 +27,12 @@ interface FareUpdateResult {
   changed: boolean;
 }
 
+interface PricingEditorState {
+  fareInputsVisible: number;
+  autoButton: Locator;
+  saveButton: Locator;
+}
+
 export class PricingUtils {
   private readonly page: Page;
   private readonly githubStepSummary?: string;
@@ -177,7 +183,7 @@ export class PricingUtils {
         continue;
       }
 
-      const changedAnyPrice = await this.updateVisiblePriceInputs(inspectedFlights);
+      const changedAnyPrice = await this.updateVisiblePriceInputs(inspectedFlights, rowText);
       await this.closePopupIfOpen();
       await this.returnToRoutesList();
 
@@ -248,8 +254,8 @@ export class PricingUtils {
       ':scope > .list-group-item',
       ':scope > [class*="route" i]',
       ':scope > [class*="flight" i]',
-      ':scope > div:has-text("#ST-"):has-text("Depart")',
-      ':scope > *:has(a:has-text("Depart"))',
+      ':scope > div:has-text("#ST-")',
+      ':scope > *:has(a)',
     ];
     const seenRows = new Set<string>();
     let selectorFamiliesExamined = 0;
@@ -283,14 +289,10 @@ export class PricingUtils {
           continue;
         }
 
-        const departButton = row.getByRole('button', { name: /depart/i }).first();
-        const departLink = row.getByRole('link', { name: /depart/i }).first();
         const hasRouteNumber = /#ST-\d{3,}/i.test(rowText);
         const hasRoutePattern = /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText);
-        const hasDepartButton = await departButton.isVisible().catch(() => false) || await departLink.isVisible().catch(() => false);
-        const signalCount = [hasRouteNumber, hasRoutePattern, hasDepartButton, true].filter(Boolean).length;
 
-        if (signalCount < 3) {
+        if (!hasRouteNumber && !hasRoutePattern) {
           continue;
         }
 
@@ -324,8 +326,8 @@ export class PricingUtils {
       ':scope >> [role="tabpanel"]:has-text("263 ROUTES")',
       ':scope >> .tab-pane:has-text("260 ROUTES")',
       ':scope >> .tab-pane:has-text("263 ROUTES")',
-      ':scope >> *:has-text("Cost index"):has-text("Depart")',
-      ':scope >> *:has-text("#ST-"):has-text("Depart")',
+      ':scope >> *:has-text("Cost index")',
+      ':scope >> *:has-text("#ST-")',
     ];
     let selectorsExamined = 0;
 
@@ -343,7 +345,7 @@ export class PricingUtils {
 
       const containerText = await this.getRouteRowText(container);
       const hasRoutesAnchor = /\b\d+\s+ROUTES\b/i.test(containerText);
-      const hasHeaderAnchor = /Cost index/i.test(containerText) && /Depart/i.test(containerText);
+      const hasHeaderAnchor = /Cost index/i.test(containerText) || /Fleet/i.test(containerText);
       const hasEntryAnchor = /#ST-\d{3,}/i.test(containerText) && /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(containerText);
       if (hasRoutesAnchor || hasHeaderAnchor || hasEntryAnchor) {
         console.log(`findRouteRows scoped route-list container selected via "${selector}" after ${selectorsExamined} selector checks.`);
@@ -357,8 +359,7 @@ export class PricingUtils {
   private async isLikelyRouteRow(row: Locator): Promise<boolean> {
     const quickSignals = await Promise.all([
       row.locator('a').count().catch(() => 0),
-      row.getByRole('button', { name: /depart/i }).count().catch(() => 0),
-      row.getByRole('link', { name: /depart/i }).count().catch(() => 0),
+      row.locator('[role="link"]').count().catch(() => 0),
     ]);
 
     if (quickSignals.every(count => count === 0)) {
@@ -370,7 +371,7 @@ export class PricingUtils {
       return false;
     }
 
-    return /#ST-\d{3,}/i.test(rowText) || /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText) || /depart/i.test(rowText);
+    return /#ST-\d{3,}/i.test(rowText) || /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText);
   }
 
   private async findRouteLinkInRow(row: Locator): Promise<Locator | undefined> {
@@ -418,18 +419,15 @@ export class PricingUtils {
 
   private async openRouteDetails(routeLink: Locator, controlIndex: number): Promise<boolean> {
     const linkText = ((await routeLink.innerText().catch(() => '')) || (await routeLink.textContent().catch(() => '')) || '').replace(/\s+/g, ' ').trim();
-    await routeLink.click();
+    const priorSeatLayoutVisibility = await this.page.getByText(/seat layout/i).first().isVisible().catch(() => false);
+    const priorEditorVisible = await this.getPricingEditorState().catch(() => undefined);
+
+    await routeLink.click().catch(() => undefined);
     await this.page.waitForTimeout(750);
 
-    const seatLayoutHeader = this.page.getByText(/seat layout/i).first();
-    if (await seatLayoutHeader.isVisible().catch(() => false)) {
+    const detailsOpened = await this.waitForRouteDetailsOpen(priorSeatLayoutVisibility, Boolean(priorEditorVisible), 4000);
+    if (detailsOpened) {
       console.log(`route details opened [${controlIndex}]: ${linkText || '[no route link text found]'}`);
-      return true;
-    }
-
-    const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
-    if (await saveButton.isVisible().catch(() => false)) {
-      console.log(`route details opened [${controlIndex}] via Save button visibility: ${linkText || '[no route link text found]'}`);
       return true;
     }
 
@@ -462,11 +460,16 @@ export class PricingUtils {
     return false;
   }
 
-  private async updateVisiblePriceInputs(controlIndex: number): Promise<boolean> {
-    const visibleFareInputs = await this.countVisibleFareInputs();
-    console.log(`fare inputs found for route ${controlIndex}: ${visibleFareInputs}`);
+  private async updateVisiblePriceInputs(controlIndex: number, routeName: string): Promise<boolean> {
+    const editorState = await this.getPricingEditorState();
+    if (!editorState) {
+      console.log(`route ${controlIndex} pricing editor was not confirmed because fare inputs or Auto/Save controls were missing.`);
+      return false;
+    }
 
-    const autoApplied = await this.applyAutoPricing(controlIndex);
+    console.log(`fare inputs found for route ${controlIndex}: ${editorState.fareInputsVisible}`);
+
+    const autoApplied = await this.applyAutoPricing(controlIndex, editorState);
     if (!autoApplied) {
       console.log(`Pricing control ${controlIndex} opened, but the Auto baseline could not be confirmed.`);
       return false;
@@ -491,20 +494,15 @@ export class PricingUtils {
       return false;
     }
 
-    for (const result of results) {
-      console.log(`route ${controlIndex} ${result.label}: Auto baseline ${result.autoBaseline} -> final ${result.finalValue}${result.changed ? '' : ' (unchanged)'}`);
-    }
+    const baselineSummary = results.map(result => `${result.label}=${result.autoBaseline}`).join(', ');
+    const finalSummary = results.map(result => `${result.label}=${result.finalValue}`).join(', ');
+    console.log(`route ${controlIndex} pricing summary [${routeName.slice(0, 200)}]: Auto baseline fares {${baselineSummary}} -> final fares {${finalSummary}}.`);
 
     const updated = results.some(result => result.changed);
     if (updated) {
-      const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
-      if (await saveButton.isVisible().catch(() => false)) {
-        await saveButton.click();
-        await this.page.waitForTimeout(500);
-        console.log(`save clicked for route ${controlIndex}.`);
-      } else {
-        console.log(`route ${controlIndex} fares changed, but no Save button was visible.`);
-      }
+      await editorState.saveButton.click();
+      await this.page.waitForTimeout(500);
+      console.log(`save clicked for route ${controlIndex}.`);
     } else {
       console.log(`route ${controlIndex} Auto-based fare targets already matched the visible values; Save was not clicked.`);
     }
@@ -512,15 +510,45 @@ export class PricingUtils {
     return updated;
   }
 
-  private async applyAutoPricing(controlIndex: number): Promise<boolean> {
-    const fareInputsBeforeAuto = await this.captureVisibleFareSnapshot();
+
+  private async waitForRouteDetailsOpen(previousSeatLayoutVisible: boolean, previousEditorVisible: boolean, timeoutMs = 4000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const seatLayoutVisible = await this.page.getByText(/seat layout/i).first().isVisible().catch(() => false);
+      const editorState = await this.getPricingEditorState().catch(() => undefined);
+      if ((seatLayoutVisible && !previousSeatLayoutVisible) || (editorState && !previousEditorVisible) || (seatLayoutVisible && editorState)) {
+        return true;
+      }
+
+      await this.page.waitForTimeout(200);
+    }
+
+    return false;
+  }
+
+  private async getPricingEditorState(): Promise<PricingEditorState | undefined> {
+    const fareInputsVisible = await this.countVisibleFareInputs();
     const autoButton = this.page.getByRole('button', { name: /^auto$/i }).first();
-    if (!(await autoButton.isVisible().catch(() => false))) {
+    const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
+    const autoVisible = await autoButton.isVisible().catch(() => false);
+    const saveVisible = await saveButton.isVisible().catch(() => false);
+
+    if (fareInputsVisible > 0 && autoVisible && saveVisible) {
+      return { fareInputsVisible, autoButton, saveButton };
+    }
+
+    return undefined;
+  }
+
+  private async applyAutoPricing(controlIndex: number, editorState: PricingEditorState): Promise<boolean> {
+    const fareInputsBeforeAuto = await this.captureVisibleFareSnapshot();
+    if (!(await editorState.autoButton.isVisible().catch(() => false))) {
       console.log(`route ${controlIndex} has no visible Auto button in the seat layout.`);
       return false;
     }
 
-    await autoButton.click();
+    await editorState.autoButton.click();
     const autoApplied = await this.waitForAutoFarePopulation(fareInputsBeforeAuto);
     if (autoApplied) {
       console.log(`route ${controlIndex} Auto pricing baseline captured.`);
@@ -616,7 +644,7 @@ export class PricingUtils {
       input.getAttribute('aria-label').catch(() => ''),
     ]);
 
-    return [name, id, placeholder, ariaLabel].filter(Boolean).join('|') || `input-${await input.evaluate(el => (el as HTMLInputElement).type || 'text').catch(() => 'unknown')}`;
+    return [name, id, placeholder, ariaLabel].filter(Boolean).join('|') || `input-${await input.evaluate(el => (el as { type?: string }).type || 'text').catch(() => 'unknown')}`;
   }
 
   private async readNumericInputValue(input: Locator): Promise<number> {
