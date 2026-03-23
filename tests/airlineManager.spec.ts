@@ -23,17 +23,19 @@ test('All Operations', async ({ page }) => {
   await page.locator('#mapRoutes').getByRole('img').click();
   await GeneralUtils.sleep(2500);
   await fuelUtils.analyzePlannedDepartures();
+  await generalUtils.closePopupIfOpen();
+
   await page.locator('#mapMaint > img').first().click();
   await fuelUtils.buyFuel();
 
   await page.getByRole('button', { name: ' Co2' }).click();
   await GeneralUtils.sleep(1000);
   await fuelUtils.buyCo2();
-  await page.locator('#popup > .modal-dialog > .modal-content > .modal-header > div > .glyphicons').click();
+  await generalUtils.closePopupIfOpen();
 
   await page.locator('div:nth-child(5) > #mapMaint > img').click();
   await campaignUtils.createCampaign();
-  await page.locator('#popup > .modal-dialog > .modal-content > .modal-header > div > .glyphicons').click();
+  await generalUtils.closePopupIfOpen();
   await GeneralUtils.sleep(1000);
 
   await page.locator('div:nth-child(4) > #mapMaint > img').click();
@@ -41,12 +43,12 @@ test('All Operations', async ({ page }) => {
   await GeneralUtils.sleep(1000);
   await maintenanceUtils.repairPlanes();
   await GeneralUtils.sleep(1000);
-  await page.locator('#popup > .modal-dialog > .modal-content > .modal-header > div > .glyphicons').click();
+  await generalUtils.closePopupIfOpen();
 
   await page.locator('#mapRoutes').getByRole('img').click();
   await GeneralUtils.sleep(2500);
   await pricingUtils.updateDailyEasyModePrices();
   await fleetUtils.departPlanes();
 
-  page.close();
+  await page.close();
 });
