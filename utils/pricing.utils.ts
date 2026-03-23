@@ -184,15 +184,19 @@ export class PricingUtils {
 
     for (let index = 0; index < routeRows.length; index++) {
       const row = routeRows[index];
-      const rowText = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      const rowText = await this.getRouteRowText(row);
       const routeLink = row.locator(
-        'a.text-info, a.text-primary, a.font-blue, a[style*="color: blue"], a[href*="route" i], a',
-      ).filter({ hasText: /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-/i }).first();
+        'a.text-info, a.text-primary, a.font-blue, a[style*="color: blue" i], a[href*="route" i], a',
+      ).filter({
+        hasText: /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i,
+      }).first();
+      const linkText = ((await routeLink.innerText().catch(() => '')) || (await routeLink.textContent().catch(() => '')) || '').replace(/\s+/g, ' ').trim();
 
       if (await routeLink.isVisible().catch(() => false)) {
         routeLinks.push(routeLink);
+        console.log(`findPriceButtons row ${index + 1} route link: ${linkText || '[no route link text found]'}`);
       } else {
-        console.log(`findPriceButtons skipped row ${index + 1} because no visible blue route link was found: ${rowText.slice(0, 200) || '[no row text found]'}`);
+        console.log(`findPriceButtons skipped row ${index + 1} because no visible route details link was found: ${rowText.slice(0, 200) || '[no row text found]'}`);
       }
     }
 
@@ -207,31 +211,83 @@ export class PricingUtils {
     const fleetScope = routesModal.locator(
       ':scope >> [role="tabpanel"]:has-text("FLEET"), :scope >> .tab-pane:has-text("FLEET"), :scope',
     ).first();
-    const rows = fleetScope.locator('tr');
-    const rowCount = await rows.count().catch(() => 0);
     const routeRows: Locator[] = [];
+    const selectorFamilies = [
+      ':scope > div',
+      ':scope > .list-group-item, :scope > [class*="route" i], :scope > [class*="flight" i]',
+      '[class*="modal-body" i] > div',
+      '[class*="routes" i] > div, [id*="routes" i] > div',
+      ':scope *:has-text("#ST-")',
+      ':scope div:has(a.text-info):has-text("Depart"), :scope div:has(a.text-primary):has-text("Depart"), :scope div:has(a.font-blue):has-text("Depart"), :scope div:has(a[href*="route" i]):has-text("Depart")',
+      'tr',
+    ];
+    const seenRows = new Set<string>();
 
-    for (let index = 0; index < rowCount; index++) {
-      const row = rows.nth(index);
-      if (!(await row.isVisible().catch(() => false))) {
-        continue;
+    for (const selector of selectorFamilies) {
+      const rows = fleetScope.locator(selector);
+      const rowCount = await rows.count().catch(() => 0);
+      console.log(`findRouteRows probing selector "${selector}" -> ${rowCount} candidates`);
+
+      for (let index = 0; index < rowCount; index++) {
+        const row = rows.nth(index);
+        if (!(await row.isVisible().catch(() => false))) {
+          continue;
+        }
+
+        const rowText = await this.getRouteRowText(row);
+        const textSample = rowText.slice(0, 160) || '[no row text found]';
+        const hasRouteNumber = /#?[A-Z]{2}-\d{3,}/i.test(rowText);
+        const hasRouteLinkText = /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText);
+        const hasDepartButton = /\bdepart\b/i.test(rowText);
+        const routeLink = row.locator(
+          'a.text-info, a.text-primary, a.font-blue, a[style*="color: blue" i], a[href*="route" i], a',
+        ).filter({ hasText: /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i }).first();
+        const hasClickableRouteLink = await routeLink.isVisible().catch(() => false);
+
+        console.log(`findRouteRows candidate ${selector} [${index + 1}/${rowCount}]: ${textSample}`);
+
+        if (!rowText || (!hasRouteNumber && !hasRouteLinkText && !(hasClickableRouteLink && hasDepartButton))) {
+          continue;
+        }
+
+        const dedupeKey = `${rowText}::${await routeLink.getAttribute('href').catch(() => '')}`;
+        if (seenRows.has(dedupeKey)) {
+          continue;
+        }
+
+        seenRows.add(dedupeKey);
+        routeRows.push(row);
       }
-
-      const rowText = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-      if (!rowText || !/[A-Z]{3}\s*-\s*[A-Z]{3}/i.test(rowText) || /depart\b/i.test(rowText) && !/-/.test(rowText)) {
-        continue;
-      }
-
-      routeRows.push(row);
     }
 
     console.log(`findRouteRows identified ${routeRows.length} visible route rows in the ROUTES modal FLEET tab.`);
     return routeRows;
   }
 
+  private async getRouteRowText(row: Locator): Promise<string> {
+    return (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+  }
+
   private async readRowText(routeLink: Locator): Promise<string> {
-    const row = routeLink.locator('xpath=ancestor::tr[1]');
-    return (await row.innerText().catch(() => '')).toLowerCase();
+    const row = await this.findClosestRouteRow(routeLink);
+    return (await this.getRouteRowText(row)).toLowerCase();
+  }
+
+  private async findClosestRouteRow(routeLink: Locator): Promise<Locator> {
+    const rowAncestors = [
+      'xpath=ancestor::*[self::tr or self::li or self::div][.//button[contains(translate(normalize-space(.), "DEPART", "depart"), "depart")]][1]',
+      'xpath=ancestor::*[self::tr or self::li or self::div][.//*[contains(normalize-space(.), "#ST-")]][1]',
+      'xpath=ancestor::*[self::tr or self::li or self::div][1]',
+    ];
+
+    for (const selector of rowAncestors) {
+      const row = routeLink.locator(selector).first();
+      if (await row.isVisible().catch(() => false)) {
+        return row;
+      }
+    }
+
+    return routeLink;
   }
 
   private hasFlightAlreadyDeparted(rowText: string): boolean {
