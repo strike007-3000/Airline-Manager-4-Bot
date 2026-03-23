@@ -236,6 +236,8 @@ export class FuelUtils {
         return null;
     }
 
+
+
     private async readMarketState() {
         return {
             currentPrice: await this.readInteger(this.page.getByText('Total price$').locator('b > span')),
@@ -324,7 +326,17 @@ export class FuelUtils {
         const favorablePercentile = input.percentile <= input.favorablePercentile;
         const emergency = isNegativeCo2 || currentCoverHours < input.minimumCoverHours;
 
-        if (!emergency && !favorablePrice && !favorablePercentile) {
+        if (emergency) {
+            return {
+                shouldBuy: input.emptyCapacity > 0,
+                quantity: input.emptyCapacity,
+                reason: isNegativeCo2
+                    ? 'CO2 holding is negative, buying to full remaining capacity.'
+                    : `${input.resource.toUpperCase()} cover is below the minimum threshold, buying to full remaining capacity.`,
+            };
+        }
+
+        if (!favorablePrice && !favorablePercentile) {
             return {
                 shouldBuy: false,
                 quantity: 0,
@@ -335,12 +347,7 @@ export class FuelUtils {
         let targetCoverHours = input.targetCoverHours;
         let reason = `${input.resource.toUpperCase()} top-up to target cover.`;
 
-        if (emergency) {
-            targetCoverHours = Math.max(input.targetCoverHours, input.minimumCoverHours * 1.5);
-            reason = isNegativeCo2
-                ? 'CO2 holding is negative, forcing purchase even at an expensive price.'
-                : `${input.resource.toUpperCase()} cover is below the minimum threshold, forcing purchase.`;
-        } else if (favorablePercentile) {
+        if (favorablePercentile) {
             targetCoverHours = input.aggressiveCoverHours;
             reason = `${input.resource.toUpperCase()} price percentile is favorable, buying aggressively in bulk.`;
         } else if (favorablePrice) {
@@ -348,7 +355,7 @@ export class FuelUtils {
         }
 
         const targetUnits = Math.ceil(targetCoverHours * input.estimatedUsagePerHour);
-        const shortfall = Math.max(targetUnits - Math.max(input.currentHolding, 0), 0);
+        const shortfall = Math.max(targetUnits - input.currentHolding, 0);
         const quantity = Math.min(Math.max(shortfall, 0), input.emptyCapacity);
 
         if (quantity <= 0) {

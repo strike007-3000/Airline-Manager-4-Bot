@@ -64,8 +64,8 @@ Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** and
 - `MARKETING_BUDGET`: `low`
 - `GAME_MODE`: `easy`
 - `REPAIR_THRESHOLD_PERCENT`: optional wear threshold for bulk repairs, default `30`
-- `PRICE_UPDATE_HOUR_UTC`: `23`
-- `PRICE_UPDATE_HOURS_UTC`: optional comma-separated list such as `1,13,23`
+- `PRICE_UPDATE_HOUR_UTC`: `22`
+- `PRICE_UPDATE_HOURS_UTC`: optional comma-separated list such as `22,0,2`
 - `MAX_PRICE_UPDATES_PER_RUN`: `12`
 - `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT`: `110`
 - `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT`: `108`
@@ -128,13 +128,13 @@ That run should update the ticket prices of not-yet-departed Easy mode flights d
 
 ### 9. Let the schedule run automatically
 
-The default schedule runs at:
-- `23:00 UTC`
-- `01:00 UTC`
-- `03:00 UTC`
-- `05:00 UTC`
-- `07:00 UTC`
-- `09:00 UTC`
+The default schedule is aligned to CET and runs at:
+- `23:00 CET` (`22:00 UTC`)
+- `01:00 CET` (`00:00 UTC`)
+- `03:00 CET` (`02:00 UTC`)
+- `05:00 CET` (`04:00 UTC`)
+- `07:00 CET` (`06:00 UTC`)
+- `09:00 CET` (`08:00 UTC`)
 
 If you want fewer GitHub minutes, reduce the cron schedule in `.github/workflows/playwright.yml`.
 
@@ -158,7 +158,7 @@ This setup is designed to stay inexpensive on GitHub Actions:
 - No paid APIs.
 - Chromium only.
 - No route-optimizer scan or route JSON maintenance.
-- Price updates are limited to one UTC hour per day.
+- Price updates are limited to one UTC hour per day unless you explicitly configure multiple UTC pricing hours.
 - Updates are capped by `MAX_PRICE_UPDATES_PER_RUN`.
 
 If you want to keep usage even lower:
@@ -173,7 +173,7 @@ If you want to keep usage even lower:
 4. Add `MARKETING_MODE=smart`.
 5. Add `MARKETING_BUDGET=low`.
 6. Add `GAME_MODE=easy`.
-7. Add `PRICE_UPDATE_HOUR_UTC=23`.
+7. Add `PRICE_UPDATE_HOUR_UTC=22` if you want the default nightly run to line up with `23:00 CET`.
 8. Add `MAX_PRICE_UPDATES_PER_RUN=12`.
 9. Add `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT=110`.
 10. Add `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT=108`.
@@ -186,7 +186,8 @@ If you want to keep usage even lower:
 - Language of your game must be **English** for this bot to work.
 - Trigger times may vary due to heavy loads on GitHub Actions.
 - To change the schedule, edit the **cron** expressions under **schedule** in `.github/workflows/playwright.yml`. Use [crontab.guru](https://crontab.guru/) to generate your desired cron expression.
-- If you want pricing to run at multiple UTC hours, set `PRICE_UPDATE_HOURS_UTC` to a comma-separated list like `1,13,23` and make sure the workflow **schedule** includes those hours.
+- GitHub Actions cron itself is UTC, so the default workflow already uses the UTC equivalents for the listed CET run times.
+- If you want pricing to run at multiple moments in the same day, set `PRICE_UPDATE_HOURS_UTC` to the UTC hours that match your preferred CET schedule.
 - This repository can be public as long as your login details stay in GitHub **Actions secrets** and your thresholds stay in GitHub **Actions variables**. Do not commit credentials or personal values directly into the repository.
 - If you still prefer not to expose the code publicly, you can clone this project and commit it to a private repository instead.
 - For questions, reach out on Discord: `muhittin852`.
@@ -204,6 +205,8 @@ The logic now:
 - maintains minimum cover in hours
 - buys up to a larger bulk-cover target when the current in-game price percentile is favorable
 - buys up to a larger bulk-cover target when the current price percentile is favorable
+- if fuel or CO2 falls below the configured minimum cover threshold, it buys to full remaining capacity immediately
 - forces a CO2 purchase if holdings are negative, even when the price is above the normal cap
+- when CO2 is already negative, it clears the deficit first instead of treating the balance as zero
 
 Because GitHub-hosted runners are ephemeral, the price-history cache is most useful on a persistent runner or when your workflow preserves the file between runs.
