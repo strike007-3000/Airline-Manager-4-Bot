@@ -128,77 +128,109 @@ export class PricingUtils {
 
     console.log('Pre-departure Easy mode ticket-price check started...');
 
-    const priceButtons = await this.findPriceButtons();
-    console.log(`Found ${priceButtons.length} visible price controls on the routes page.`);
+    const routeLinks = await this.findPriceButtons();
+    console.log(`Found ${routeLinks.length} eligible route links on the routes page.`);
     let updatedFlights = 0;
     let inspectedFlights = 0;
 
-    for (const button of priceButtons) {
+    for (const routeLink of routeLinks) {
       if (updatedFlights >= this.maxPriceUpdatesPerRun) {
         break;
       }
 
       inspectedFlights += 1;
-      const rowText = await this.readRowText(button);
+      const rowText = await this.readRowText(routeLink);
+      console.log(`route row selected [${inspectedFlights}/${routeLinks.length}]: ${rowText.slice(0, 200) || '[no row text found]'}`);
       if (this.hasFlightAlreadyDeparted(rowText)) {
-        console.log(`Skipping pricing control ${inspectedFlights} because the flight already appears departed: ${rowText.slice(0, 120)}`);
+        console.log(`route skipped [departed status]: ${rowText.slice(0, 200)}`);
         continue;
       }
 
-      await button.click();
-      await this.page.waitForTimeout(500);
+      const openedRouteDetails = await this.openRouteDetails(routeLink, inspectedFlights);
+      if (!openedRouteDetails) {
+        console.log(`route skipped [details not opened]: ${rowText.slice(0, 200)}`);
+        continue;
+      }
+
+      const seatLayoutReady = await this.ensureSeatLayoutExpanded();
+      if (!seatLayoutReady) {
+        console.log(`route skipped [seat layout unavailable]: ${rowText.slice(0, 200)}`);
+        await this.returnToRoutesList();
+        continue;
+      }
 
       const changedAnyPrice = await this.updateVisiblePriceInputs(inspectedFlights);
       await this.closePopupIfOpen();
+      await this.returnToRoutesList();
 
       if (changedAnyPrice) {
         updatedFlights += 1;
+        console.log(`route updated: ${rowText.slice(0, 200)}`);
+      } else {
+        console.log(`route skipped [no fare changes made]: ${rowText.slice(0, 200)}`);
       }
     }
 
     const summary = updatedFlights > 0
       ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights using Easy mode multipliers before departures.`
-      : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures. Inspected ${inspectedFlights} pricing controls.`;
+      : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures. Inspected ${inspectedFlights} route details pages.`;
     this.appendSummary(summary);
     console.log(`Pre-departure Easy mode ticket-price check finished. Updated flights: ${updatedFlights}.`);
   }
 
   private async findPriceButtons(): Promise<Locator[]> {
-    const selectors = [
-      {
-        name: 'role=button[name~/price/i]',
-        locator: this.page.getByRole('button', { name: /price/i }),
-      },
-      {
-        name: 'role=link[name~/price/i]',
-        locator: this.page.getByRole('link', { name: /price/i }),
-      },
-      {
-        name: 'button/a text Price',
-        locator: this.page.locator('button:has-text("Price"), a:has-text("Price")'),
-      },
-    ];
+    const routeRows = await this.findRouteRows();
+    const routeLinks: Locator[] = [];
 
-    const buttons: Locator[] = [];
-    for (const { name, locator } of selectors) {
-      const totalCount = await locator.count().catch(() => 0);
-      let visibleCount = 0;
-      for (let index = 0; index < totalCount; index++) {
-        const item = locator.nth(index);
-        if (await item.isVisible().catch(() => false)) {
-          visibleCount += 1;
-          buttons.push(item);
-        }
+    for (let index = 0; index < routeRows.length; index++) {
+      const row = routeRows[index];
+      const rowText = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      const routeLink = row.locator(
+        'a.text-info, a.text-primary, a.font-blue, a[style*="color: blue"], a[href*="route" i], a',
+      ).filter({ hasText: /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-/i }).first();
+
+      if (await routeLink.isVisible().catch(() => false)) {
+        routeLinks.push(routeLink);
+      } else {
+        console.log(`findPriceButtons skipped row ${index + 1} because no visible blue route link was found: ${rowText.slice(0, 200) || '[no row text found]'}`);
       }
-
-      console.log(`findPriceButtons selector family "${name}" matched ${totalCount} elements before visibility filtering and ${visibleCount} after filtering.`);
     }
 
-    return buttons;
+    console.log(`findPriceButtons collected ${routeLinks.length} visible route links from ${routeRows.length} route rows.`);
+    return routeLinks;
   }
 
-  private async readRowText(button: Locator): Promise<string> {
-    const row = button.locator('xpath=ancestor::tr[1]');
+  private async findRouteRows(): Promise<Locator[]> {
+    const routesModal = this.page.locator(
+      '[role="dialog"]:has-text("ROUTES"), .modal:has-text("ROUTES"), #popup:has-text("ROUTES"), body',
+    ).first();
+    const fleetScope = routesModal.locator(
+      ':scope >> [role="tabpanel"]:has-text("FLEET"), :scope >> .tab-pane:has-text("FLEET"), :scope',
+    ).first();
+    const rows = fleetScope.locator('tr');
+    const rowCount = await rows.count().catch(() => 0);
+    const routeRows: Locator[] = [];
+
+    for (let index = 0; index < rowCount; index++) {
+      const row = rows.nth(index);
+      if (!(await row.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      const rowText = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      if (!rowText || !/[A-Z]{3}\s*-\s*[A-Z]{3}/i.test(rowText) || /depart\b/i.test(rowText) && !/-/.test(rowText)) {
+        continue;
+      }
+
+      routeRows.push(row);
+    }
+
+    console.log(`findRouteRows identified ${routeRows.length} visible route rows in the ROUTES modal FLEET tab.`);
+    return routeRows;
+  }
+
+  private async readRowText(routeLink: Locator): Promise<string> {
+    const row = routeLink.locator('xpath=ancestor::tr[1]');
     return (await row.innerText().catch(() => '')).toLowerCase();
   }
 
@@ -206,8 +238,56 @@ export class PricingUtils {
     return rowText.includes('departed') || rowText.includes('airborne') || rowText.includes('arrived');
   }
 
+  private async openRouteDetails(routeLink: Locator, controlIndex: number): Promise<boolean> {
+    const linkText = ((await routeLink.innerText().catch(() => '')) || (await routeLink.textContent().catch(() => '')) || '').replace(/\s+/g, ' ').trim();
+    await routeLink.click();
+    await this.page.waitForTimeout(750);
+
+    const seatLayoutHeader = this.page.getByText(/seat layout/i).first();
+    if (await seatLayoutHeader.isVisible().catch(() => false)) {
+      console.log(`route details opened [${controlIndex}]: ${linkText || '[no route link text found]'}`);
+      return true;
+    }
+
+    const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
+    if (await saveButton.isVisible().catch(() => false)) {
+      console.log(`route details opened [${controlIndex}] via Save button visibility: ${linkText || '[no route link text found]'}`);
+      return true;
+    }
+
+    console.log(`route details did not open cleanly [${controlIndex}]: ${linkText || '[no route link text found]'}`);
+    return false;
+  }
+
+  private async ensureSeatLayoutExpanded(): Promise<boolean> {
+    const seatLayoutHeader = this.page.getByText(/seat layout/i).first();
+    if (!(await seatLayoutHeader.isVisible().catch(() => false))) {
+      return false;
+    }
+
+    const visibleInputsBeforeExpand = await this.countVisibleFareInputs();
+    if (visibleInputsBeforeExpand > 0) {
+      console.log(`seat layout already open; visible fare inputs before expand attempt: ${visibleInputsBeforeExpand}`);
+      return true;
+    }
+
+    await seatLayoutHeader.click().catch(() => undefined);
+    await this.page.waitForTimeout(400);
+
+    const visibleInputsAfterExpand = await this.countVisibleFareInputs();
+    if (visibleInputsAfterExpand > 0) {
+      console.log(`seat layout expanded; visible fare inputs after expand: ${visibleInputsAfterExpand}`);
+      return true;
+    }
+
+    console.log('seat layout header was found, but no visible fare inputs appeared after expand attempt.');
+    return false;
+  }
+
   private async updateVisiblePriceInputs(controlIndex: number): Promise<boolean> {
     let updated = false;
+    const visibleFareInputs = await this.countVisibleFareInputs();
+    console.log(`fare inputs found for route ${controlIndex}: ${visibleFareInputs}`);
 
     updated = await this.tryUpdatePriceInput(/economy|eco|y/i, this.multipliers.economy) || updated;
     updated = await this.tryUpdatePriceInput(/business|bus|j/i, this.multipliers.business) || updated;
@@ -220,6 +300,7 @@ export class PricingUtils {
       if (await saveButton.isVisible().catch(() => false)) {
         await saveButton.click();
         await this.page.waitForTimeout(500);
+        console.log(`save clicked for route ${controlIndex}.`);
       }
     } else {
       console.log(`Pricing control ${controlIndex} opened, but no visible fare inputs could be updated.`);
@@ -285,6 +366,19 @@ export class PricingUtils {
     }
 
     return undefined;
+  }
+
+  private async countVisibleFareInputs(): Promise<number> {
+    const fareInputs = this.page.locator(
+      'input:visible[placeholder*="Economy" i], input:visible[placeholder*="Business" i], input:visible[placeholder*="First" i], input:visible[placeholder*="Large" i], input:visible[placeholder*="Heavy" i], input:visible[name*="economy" i], input:visible[name*="business" i], input:visible[name*="first" i], input:visible[name*="large" i], input:visible[name*="heavy" i], input:visible[id*="economy" i], input:visible[id*="business" i], input:visible[id*="first" i], input:visible[id*="large" i], input:visible[id*="heavy" i]',
+    );
+    return fareInputs.count().catch(() => 0);
+  }
+
+  private async returnToRoutesList(): Promise<void> {
+    await this.page.goBack().catch(() => undefined);
+    await this.page.waitForTimeout(750);
+    await this.waitForRoutesPageReady().catch(() => false);
   }
 
   private async closePopupIfOpen(): Promise<void> {
