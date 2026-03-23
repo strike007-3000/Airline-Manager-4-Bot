@@ -46,6 +46,9 @@ test('All Operations', async ({ page }) => {
   await generalUtils.closePopupIfOpen();
 
   await page.locator('#mapRoutes').getByRole('img').click();
+  const routesPageUrl = page.url();
+  const routesPageTitle = await page.title().catch(() => '');
+  console.log(`Opened routes page for pricing. URL: ${routesPageUrl || 'unavailable'}. Title: ${routesPageTitle || 'unavailable'}.`);
   const routesPageReadyForPricing = await pricingUtils.waitForRoutesPageReady();
   if (routesPageReadyForPricing) {
     await pricingUtils.updateDailyEasyModePrices();
