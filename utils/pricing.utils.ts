@@ -15,10 +15,16 @@ interface RoutesReadySignal {
   isSatisfied: () => Promise<boolean>;
 }
 
+interface RouteDiscoveryMatch {
+  container: Locator;
+  selector: string;
+}
+
 export class PricingUtils {
   private readonly page: Page;
   private readonly githubStepSummary?: string;
   private readonly maxPriceUpdatesPerRun: number;
+  private readonly maxRouteDiscoveryAttemptsPerRun: number;
   private readonly gameMode: string;
   private readonly multipliers: PriceMultipliers;
 
@@ -26,6 +32,10 @@ export class PricingUtils {
     this.page = page;
     this.githubStepSummary = process.env.GITHUB_STEP_SUMMARY;
     this.maxPriceUpdatesPerRun = ConfigUtils.optionalNumber('MAX_PRICE_UPDATES_PER_RUN', 12);
+    this.maxRouteDiscoveryAttemptsPerRun = ConfigUtils.optionalNumber(
+      'MAX_ROUTE_DISCOVERY_ATTEMPTS_PER_RUN',
+      Math.max(3, Math.min(this.maxPriceUpdatesPerRun, 6)),
+    );
     this.gameMode = ConfigUtils.optionalString('GAME_MODE', 'easy').toLowerCase();
     this.multipliers = {
       economy: this.getMultiplierFromPercent('EASY_MODE_ECONOMY_MULTIPLIER_PERCENT', 110),
@@ -127,13 +137,14 @@ export class PricingUtils {
     }
 
     console.log('Pre-departure Easy mode ticket-price check started...');
+    console.log(`Route discovery attempt cap for this run: ${this.maxRouteDiscoveryAttemptsPerRun}. Price update cap: ${this.maxPriceUpdatesPerRun}.`);
 
     const routeLinks = await this.findPriceButtons();
     console.log(`Found ${routeLinks.length} eligible route links on the routes page.`);
     let updatedFlights = 0;
     let inspectedFlights = 0;
 
-    for (const routeLink of routeLinks) {
+    for (const routeLink of routeLinks.slice(0, this.maxRouteDiscoveryAttemptsPerRun)) {
       if (updatedFlights >= this.maxPriceUpdatesPerRun) {
         break;
       }
@@ -215,8 +226,8 @@ export class PricingUtils {
     const routesModal = this.page.locator(
       '[role="dialog"]:has-text("ROUTES"), .modal:has-text("ROUTES"), #popup:has-text("ROUTES"), body',
     ).first();
-    const routeListContainer = await this.findRouteListContainer(routesModal);
-    if (!routeListContainer) {
+    const routeListMatch = await this.findRouteListContainer(routesModal);
+    if (!routeListMatch) {
       console.log('findRouteRows aborted because no scoped route-list container was found inside the ROUTES modal.');
       return [];
     }
@@ -234,9 +245,16 @@ export class PricingUtils {
       ':scope > *:has(a:has-text("Depart"))',
     ];
     const seenRows = new Set<string>();
+    let selectorFamiliesExamined = 0;
 
     for (const selector of candidateSelectors) {
-      const rows = routeListContainer.locator(selector);
+      if (selectorFamiliesExamined >= this.maxRouteDiscoveryAttemptsPerRun) {
+        console.log(`findRouteRows stopped after ${selectorFamiliesExamined} selector families due to discovery cap ${this.maxRouteDiscoveryAttemptsPerRun}.`);
+        break;
+      }
+
+      selectorFamiliesExamined += 1;
+      const rows = routeListMatch.container.locator(selector);
       const rowCount = await rows.count().catch(() => 0);
       if (rowCount === 0) {
         continue;
@@ -248,24 +266,28 @@ export class PricingUtils {
           continue;
         }
 
-        const rowText = await this.getRouteRowText(row);
-        if (!rowText) {
+        if (!(await this.isLikelyRouteRow(row))) {
           continue;
         }
 
+        const rowText = await this.getRouteRowText(row);
         const routeLink = await this.findRouteLinkInRow(row);
+        if (!routeLink) {
+          continue;
+        }
+
         const departButton = row.getByRole('button', { name: /depart/i }).first();
         const departLink = row.getByRole('link', { name: /depart/i }).first();
         const hasRouteNumber = /#ST-\d{3,}/i.test(rowText);
         const hasRoutePattern = /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText);
         const hasDepartButton = await departButton.isVisible().catch(() => false) || await departLink.isVisible().catch(() => false);
-        const signalCount = [hasRouteNumber, hasRoutePattern, hasDepartButton, Boolean(routeLink)].filter(Boolean).length;
+        const signalCount = [hasRouteNumber, hasRoutePattern, hasDepartButton, true].filter(Boolean).length;
 
         if (signalCount < 3) {
           continue;
         }
 
-        const dedupeKey = `${rowText}::${await routeLink?.getAttribute('href').catch(() => '')}`;
+        const dedupeKey = `${rowText}::${await routeLink.getAttribute('href').catch(() => '')}`;
         if (seenRows.has(dedupeKey)) {
           continue;
         }
@@ -273,19 +295,23 @@ export class PricingUtils {
         seenRows.add(dedupeKey);
         routeRows.push(row);
       }
+
+      if (routeRows.length > 0) {
+        break;
+      }
     }
 
     if (routeRows.length === 0) {
-      console.log('findRouteRows found a scoped route-list container but no valid route rows after filtering.');
+      console.log(`findRouteRows found container via "${routeListMatch.selector}" but no valid route rows after ${selectorFamiliesExamined} selector families; skipping pricing discovery.`);
       return [];
     }
 
     const rowSamples = await Promise.all(routeRows.slice(0, 3).map(row => this.getRouteRowText(row)));
-    console.log(`findRouteRows identified ${routeRows.length} valid route rows in the ROUTES modal. Samples: ${rowSamples.map(sample => sample.slice(0, 120) || '[no row text found]').join(' | ')}`);
+    console.log(`findRouteRows identified ${routeRows.length} valid route rows in the ROUTES modal via "${routeListMatch.selector}" after ${selectorFamiliesExamined} selector families. Samples: ${rowSamples.map(sample => sample.slice(0, 120) || '[no row text found]').join(' | ')}`);
     return routeRows;
   }
 
-  private async findRouteListContainer(routesModal: Locator): Promise<Locator | undefined> {
+  private async findRouteListContainer(routesModal: Locator): Promise<RouteDiscoveryMatch | undefined> {
     const scopedSelectors = [
       ':scope >> [role="tabpanel"]:has-text("260 ROUTES")',
       ':scope >> [role="tabpanel"]:has-text("263 ROUTES")',
@@ -294,8 +320,15 @@ export class PricingUtils {
       ':scope >> *:has-text("Cost index"):has-text("Depart")',
       ':scope >> *:has-text("#ST-"):has-text("Depart")',
     ];
+    let selectorsExamined = 0;
 
     for (const selector of scopedSelectors) {
+      if (selectorsExamined >= this.maxRouteDiscoveryAttemptsPerRun) {
+        console.log(`findRouteListContainer stopped after ${selectorsExamined} selectors due to discovery cap ${this.maxRouteDiscoveryAttemptsPerRun}.`);
+        break;
+      }
+
+      selectorsExamined += 1;
       const container = routesModal.locator(selector).first();
       if (!(await container.isVisible().catch(() => false))) {
         continue;
@@ -306,12 +339,31 @@ export class PricingUtils {
       const hasHeaderAnchor = /Cost index/i.test(containerText) && /Depart/i.test(containerText);
       const hasEntryAnchor = /#ST-\d{3,}/i.test(containerText) && /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(containerText);
       if (hasRoutesAnchor || hasHeaderAnchor || hasEntryAnchor) {
-        console.log(`findRouteRows scoped route-list container selected via "${selector}".`);
-        return container;
+        console.log(`findRouteRows scoped route-list container selected via "${selector}" after ${selectorsExamined} selector checks.`);
+        return { container, selector };
       }
     }
 
     return undefined;
+  }
+
+  private async isLikelyRouteRow(row: Locator): Promise<boolean> {
+    const quickSignals = await Promise.all([
+      row.locator('a').count().catch(() => 0),
+      row.getByRole('button', { name: /depart/i }).count().catch(() => 0),
+      row.getByRole('link', { name: /depart/i }).count().catch(() => 0),
+    ]);
+
+    if (quickSignals.every(count => count === 0)) {
+      return false;
+    }
+
+    const rowText = await this.getRouteRowText(row);
+    if (!rowText) {
+      return false;
+    }
+
+    return /#ST-\d{3,}/i.test(rowText) || /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText) || /depart/i.test(rowText);
   }
 
   private async findRouteLinkInRow(row: Locator): Promise<Locator | undefined> {
