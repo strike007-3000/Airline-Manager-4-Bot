@@ -180,24 +180,31 @@ export class PricingUtils {
 
   private async findPriceButtons(): Promise<Locator[]> {
     const routeRows = await this.findRouteRows();
+    if (routeRows.length === 0) {
+      console.log('findPriceButtons aborted because scoped route discovery found no valid route rows.');
+      return [];
+    }
+
     const routeLinks: Locator[] = [];
 
     for (let index = 0; index < routeRows.length; index++) {
       const row = routeRows[index];
       const rowText = await this.getRouteRowText(row);
-      const routeLink = row.locator(
-        'a.text-info, a.text-primary, a.font-blue, a[style*="color: blue" i], a[href*="route" i], a',
-      ).filter({
-        hasText: /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i,
-      }).first();
+      if (!rowText) {
+        console.log(`findPriceButtons skipped row ${index + 1} because readRowText returned no meaningful text.`);
+        continue;
+      }
+
+      const routeLink = await this.findRouteLinkInRow(row);
+      if (!routeLink) {
+        console.log(`findPriceButtons skipped row ${index + 1} because no visible route details link was found: ${rowText.slice(0, 200)}`);
+        continue;
+      }
+
       const linkText = ((await routeLink.innerText().catch(() => '')) || (await routeLink.textContent().catch(() => '')) || '').replace(/\s+/g, ' ').trim();
 
-      if (await routeLink.isVisible().catch(() => false)) {
-        routeLinks.push(routeLink);
-        console.log(`findPriceButtons row ${index + 1} route link: ${linkText || '[no route link text found]'}`);
-      } else {
-        console.log(`findPriceButtons skipped row ${index + 1} because no visible route details link was found: ${rowText.slice(0, 200) || '[no row text found]'}`);
-      }
+      routeLinks.push(routeLink);
+      console.log(`findPriceButtons row ${index + 1} route link: ${linkText || rowText.slice(0, 120)}`);
     }
 
     console.log(`findPriceButtons collected ${routeLinks.length} visible route links from ${routeRows.length} route rows.`);
@@ -208,25 +215,32 @@ export class PricingUtils {
     const routesModal = this.page.locator(
       '[role="dialog"]:has-text("ROUTES"), .modal:has-text("ROUTES"), #popup:has-text("ROUTES"), body',
     ).first();
-    const fleetScope = routesModal.locator(
-      ':scope >> [role="tabpanel"]:has-text("FLEET"), :scope >> .tab-pane:has-text("FLEET"), :scope',
-    ).first();
+    const routeListContainer = await this.findRouteListContainer(routesModal);
+    if (!routeListContainer) {
+      console.log('findRouteRows aborted because no scoped route-list container was found inside the ROUTES modal.');
+      return [];
+    }
+
     const routeRows: Locator[] = [];
-    const selectorFamilies = [
-      ':scope > div',
-      ':scope > .list-group-item, :scope > [class*="route" i], :scope > [class*="flight" i]',
-      '[class*="modal-body" i] > div',
-      '[class*="routes" i] > div, [id*="routes" i] > div',
-      ':scope *:has-text("#ST-")',
-      ':scope div:has(a.text-info):has-text("Depart"), :scope div:has(a.text-primary):has-text("Depart"), :scope div:has(a.font-blue):has-text("Depart"), :scope div:has(a[href*="route" i]):has-text("Depart")',
-      'tr',
+    const candidateSelectors = [
+      ':scope > tr',
+      ':scope > tbody > tr',
+      ':scope > li',
+      ':scope > [role="row"]',
+      ':scope > .list-group-item',
+      ':scope > [class*="route" i]',
+      ':scope > [class*="flight" i]',
+      ':scope > div:has-text("#ST-"):has-text("Depart")',
+      ':scope > *:has(a:has-text("Depart"))',
     ];
     const seenRows = new Set<string>();
 
-    for (const selector of selectorFamilies) {
-      const rows = fleetScope.locator(selector);
+    for (const selector of candidateSelectors) {
+      const rows = routeListContainer.locator(selector);
       const rowCount = await rows.count().catch(() => 0);
-      console.log(`findRouteRows probing selector "${selector}" -> ${rowCount} candidates`);
+      if (rowCount === 0) {
+        continue;
+      }
 
       for (let index = 0; index < rowCount; index++) {
         const row = rows.nth(index);
@@ -235,22 +249,23 @@ export class PricingUtils {
         }
 
         const rowText = await this.getRouteRowText(row);
-        const textSample = rowText.slice(0, 160) || '[no row text found]';
-        const hasRouteNumber = /#?[A-Z]{2}-\d{3,}/i.test(rowText);
-        const hasRouteLinkText = /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText);
-        const hasDepartButton = /\bdepart\b/i.test(rowText);
-        const routeLink = row.locator(
-          'a.text-info, a.text-primary, a.font-blue, a[style*="color: blue" i], a[href*="route" i], a',
-        ).filter({ hasText: /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i }).first();
-        const hasClickableRouteLink = await routeLink.isVisible().catch(() => false);
-
-        console.log(`findRouteRows candidate ${selector} [${index + 1}/${rowCount}]: ${textSample}`);
-
-        if (!rowText || (!hasRouteNumber && !hasRouteLinkText && !(hasClickableRouteLink && hasDepartButton))) {
+        if (!rowText) {
           continue;
         }
 
-        const dedupeKey = `${rowText}::${await routeLink.getAttribute('href').catch(() => '')}`;
+        const routeLink = await this.findRouteLinkInRow(row);
+        const departButton = row.getByRole('button', { name: /depart/i }).first();
+        const departLink = row.getByRole('link', { name: /depart/i }).first();
+        const hasRouteNumber = /#ST-\d{3,}/i.test(rowText);
+        const hasRoutePattern = /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(rowText);
+        const hasDepartButton = await departButton.isVisible().catch(() => false) || await departLink.isVisible().catch(() => false);
+        const signalCount = [hasRouteNumber, hasRoutePattern, hasDepartButton, Boolean(routeLink)].filter(Boolean).length;
+
+        if (signalCount < 3) {
+          continue;
+        }
+
+        const dedupeKey = `${rowText}::${await routeLink?.getAttribute('href').catch(() => '')}`;
         if (seenRows.has(dedupeKey)) {
           continue;
         }
@@ -260,8 +275,55 @@ export class PricingUtils {
       }
     }
 
-    console.log(`findRouteRows identified ${routeRows.length} visible route rows in the ROUTES modal FLEET tab.`);
+    if (routeRows.length === 0) {
+      console.log('findRouteRows found a scoped route-list container but no valid route rows after filtering.');
+      return [];
+    }
+
+    const rowSamples = await Promise.all(routeRows.slice(0, 3).map(row => this.getRouteRowText(row)));
+    console.log(`findRouteRows identified ${routeRows.length} valid route rows in the ROUTES modal. Samples: ${rowSamples.map(sample => sample.slice(0, 120) || '[no row text found]').join(' | ')}`);
     return routeRows;
+  }
+
+  private async findRouteListContainer(routesModal: Locator): Promise<Locator | undefined> {
+    const scopedSelectors = [
+      ':scope >> [role="tabpanel"]:has-text("260 ROUTES")',
+      ':scope >> [role="tabpanel"]:has-text("263 ROUTES")',
+      ':scope >> .tab-pane:has-text("260 ROUTES")',
+      ':scope >> .tab-pane:has-text("263 ROUTES")',
+      ':scope >> *:has-text("Cost index"):has-text("Depart")',
+      ':scope >> *:has-text("#ST-"):has-text("Depart")',
+    ];
+
+    for (const selector of scopedSelectors) {
+      const container = routesModal.locator(selector).first();
+      if (!(await container.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      const containerText = await this.getRouteRowText(container);
+      const hasRoutesAnchor = /\b\d+\s+ROUTES\b/i.test(containerText);
+      const hasHeaderAnchor = /Cost index/i.test(containerText) && /Depart/i.test(containerText);
+      const hasEntryAnchor = /#ST-\d{3,}/i.test(containerText) && /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(containerText);
+      if (hasRoutesAnchor || hasHeaderAnchor || hasEntryAnchor) {
+        console.log(`findRouteRows scoped route-list container selected via "${selector}".`);
+        return container;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async findRouteLinkInRow(row: Locator): Promise<Locator | undefined> {
+    const routeLink = row.locator(
+      'a.text-info, a.text-primary, a.font-blue, a[style*="color: blue" i], a[href*="route" i], a',
+    ).filter({ hasText: /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i }).first();
+
+    if (await routeLink.isVisible().catch(() => false)) {
+      return routeLink;
+    }
+
+    return undefined;
   }
 
   private async getRouteRowText(row: Locator): Promise<string> {
@@ -270,7 +332,8 @@ export class PricingUtils {
 
   private async readRowText(routeLink: Locator): Promise<string> {
     const row = await this.findClosestRouteRow(routeLink);
-    return (await this.getRouteRowText(row)).toLowerCase();
+    const rowText = await this.getRouteRowText(row);
+    return rowText ? rowText.toLowerCase() : '';
   }
 
   private async findClosestRouteRow(routeLink: Locator): Promise<Locator> {
