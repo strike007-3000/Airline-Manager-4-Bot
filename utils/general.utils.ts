@@ -34,4 +34,12 @@ export class GeneralUtils {
 
         console.log('Logged in successfully!');
     }
+
+    public async closePopupIfOpen() {
+        const closeButton = this.page.locator('#popup .glyphicons, #popup .close, .modal-header .close').first();
+        if (await closeButton.isVisible().catch(() => false)) {
+            await closeButton.click();
+            await this.page.waitForTimeout(300);
+        }
+    }
 }
