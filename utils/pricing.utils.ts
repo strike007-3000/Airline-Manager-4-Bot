@@ -70,6 +70,7 @@ export class PricingUtils {
     const summary = updatedFlights > 0
       ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights using Easy mode multipliers before departures.`
       : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures. Inspected ${inspectedFlights} pricing controls.`;
+      : '## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures.';
 
     this.appendSummary(summary);
     console.log(`Pre-departure Easy mode ticket-price check finished. Updated flights: ${updatedFlights}.`);
