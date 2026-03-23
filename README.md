@@ -9,6 +9,8 @@ This repository contains a bot for Airline Manager 4, built with Playwright and 
 - Run a lightweight smart marketing selector for airline reputation campaigns.
 - Track in-game fuel and CO2 price history in a local JSON cache and score current game prices by percentile.
 - Buy fuel and CO2 using in-game market-intelligence rules based on game price caps, favorable percentiles, and minimum cover hours.
+- Track fuel and CO2 price history in a local JSON cache and score current prices by percentile.
+- Buy fuel and CO2 using market-intelligence rules based on price caps, favorable percentiles, and minimum cover hours.
 - Depart all planes.
 - Schedule repairs and A-Checks if needed.
 - Force CO2 purchases when holdings go negative, even if the market is expensive.
@@ -183,12 +185,14 @@ If you want to keep usage even lower:
 The fuel purchaser now keeps a local JSON history of in-game fuel and CO2 prices, estimates upcoming consumption from the visible planned departures on the routes page, and buys by cover time rather than hard-coded low-stock numbers.
 
 This logic is driven only by what the bot observes inside Airline Manager 4. It does not use or react to any real-world fuel or carbon market data.
+The fuel purchaser now keeps a local JSON price-history file, estimates upcoming consumption from the visible planned departures on the routes page, and buys by cover time rather than hard-coded low-stock numbers.
 
 The logic now:
 - snapshots planned departures before opening the fuel market
 - estimates hourly fuel and CO2 usage using configurable average burn-per-departure values
 - maintains minimum cover in hours
 - buys up to a larger bulk-cover target when the current in-game price percentile is favorable
+- buys up to a larger bulk-cover target when the current price percentile is favorable
 - forces a CO2 purchase if holdings are negative, even when the price is above the normal cap
 
 Because GitHub-hosted runners are ephemeral, the price-history cache is most useful on a persistent runner or when your workflow preserves the file between runs.

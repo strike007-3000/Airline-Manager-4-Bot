@@ -74,6 +74,11 @@ export class FuelUtils {
 
     public async analyzePlannedDepartures() {
         console.log('Analyzing planned departures for in-game market intelligence...');
+        console.log(`Fuel intelligence configured. Fuel cap=${this.maxFuelPrice}, CO2 cap=${this.maxCo2Price}, history file=${this.marketHistoryFile}`);
+    }
+
+    public async analyzePlannedDepartures() {
+        console.log('Analyzing planned departures for market intelligence...');
 
         const rowTexts = await this.collectPotentialDepartureTexts();
         const now = new Date();
@@ -329,6 +334,7 @@ export class FuelUtils {
                 shouldBuy: false,
                 quantity: 0,
                 reason: `${input.resource.toUpperCase()} in-game price is not favorable and minimum cover is safe.`,
+                reason: `${input.resource.toUpperCase()} price is not favorable and minimum cover is safe.`,
             };
         }
 
@@ -345,6 +351,9 @@ export class FuelUtils {
             reason = `${input.resource.toUpperCase()} in-game price percentile is favorable, buying aggressively in bulk.`;
         } else if (favorablePrice) {
             reason = `${input.resource.toUpperCase()} in-game price is below cap, topping up to target cover.`;
+            reason = `${input.resource.toUpperCase()} price percentile is favorable, buying aggressively in bulk.`;
+        } else if (favorablePrice) {
+            reason = `${input.resource.toUpperCase()} price is below cap, topping up to target cover.`;
         }
 
         const targetUnits = Math.ceil(targetCoverHours * input.estimatedUsagePerHour);
