@@ -149,22 +149,35 @@ export class PricingUtils {
 
       let changedAnyPrice = false;
 
-      // AM4 uses a strict positional layout: 3 inputs = PAX (Y, J, F), 2 inputs = CARGO (Large, Heavy)
-      const visibleInputs = this.page.locator('.modal:visible input[type="text"]:visible, .modal:visible input:not([type]):visible');
+      // Find ALL visible inputs in the modal
+      const visibleInputs = this.page.locator('.modal:visible input:visible');
       const inputCount = await visibleInputs.count().catch(() => 0);
-      console.log(`Found ${inputCount} visible price inputs in the Seat Layout modal.`);
+      console.log(`Found ${inputCount} visible inputs in the Seat Layout modal.`);
 
-      if (inputCount === 3) {
-        const changedY = await this.updateAmount(visibleInputs.nth(0), this.multipliers.economy, 'Economy');
-        const changedJ = await this.updateAmount(visibleInputs.nth(1), this.multipliers.business, 'Business');
-        const changedF = await this.updateAmount(visibleInputs.nth(2), this.multipliers.first, 'First');
+      // Since AM4 uses type="number" or untyped HTML inputs for prices, we grab all visible inputs.
+      let numericInputs: Locator[] = [];
+      for (let j = 0; j < inputCount; j++) {
+        const inputLocator = visibleInputs.nth(j);
+        const valStr = await inputLocator.inputValue({ timeout: 1000 }).catch(() => '');
+        // Only consider inputs that currently hold a numeric value (ticket prices)
+        if (valStr && !isNaN(parseInt(valStr.replace(/,/g, '').trim(), 10))) {
+          numericInputs.push(inputLocator);
+        }
+      }
+
+      console.log(`Filtered to ${numericInputs.length} numeric price inputs.`);
+
+      if (numericInputs.length === 3) {
+        const changedY = await this.updateAmount(numericInputs[0], this.multipliers.economy, 'Economy');
+        const changedJ = await this.updateAmount(numericInputs[1], this.multipliers.business, 'Business');
+        const changedF = await this.updateAmount(numericInputs[2], this.multipliers.first, 'First');
         changedAnyPrice = changedY || changedJ || changedF;
-      } else if (inputCount === 2) {
-        const changedL = await this.updateAmount(visibleInputs.nth(0), this.multipliers.cargoLarge, 'Cargo Large');
-        const changedH = await this.updateAmount(visibleInputs.nth(1), this.multipliers.cargoHeavy, 'Cargo Heavy');
+      } else if (numericInputs.length === 2) {
+        const changedL = await this.updateAmount(numericInputs[0], this.multipliers.cargoLarge, 'Cargo Large');
+        const changedH = await this.updateAmount(numericInputs[1], this.multipliers.cargoHeavy, 'Cargo Heavy');
         changedAnyPrice = changedL || changedH;
       } else {
-        console.log(`Unexpected number of inputs (${inputCount}). Skipping price logic.`);
+        console.log(`Unexpected number of numeric inputs (${numericInputs.length}). Skipping price logic.`);
       }
 
       if (changedAnyPrice) {
@@ -217,30 +230,11 @@ export class PricingUtils {
   }
 
   private async returnToRoutesList(): Promise<void> {
-    // Navigate out of the seat-layout modal cleanly
-    const backBtn = this.page.locator('.modal-header, .box-header').locator('span, i, div, a, button').filter({ hasText: /^</ }).first();
-    if (await backBtn.isVisible().catch(() => false)) {
-      console.log('Found explicit "<" back button. Clicking it...');
-      await backBtn.click({ timeout: 3000, force: true }).catch((e) => console.log('Back click error: ' + e.message));
-      await this.page.waitForTimeout(1000);
-    } else {
-      const textBackBtn = this.page.getByText(/<\s*[A-Z0-9-]{3,}/i).first();
-      if (await textBackBtn.isVisible().catch(() => false)) {
-        console.log('Found textual back button. Clicking it...');
-        await textBackBtn.click({ timeout: 3000, force: true }).catch((e) => console.log('Text back click error: ' + e.message));
-        await this.page.waitForTimeout(1000);
-      } else {
-        console.log('No back button found. Forcing modal close...');
-        await this.page.locator('.modal-header .close, .box-header .close').first().click({ timeout: 3000, force: true }).catch(() => undefined);
-        await this.page.waitForTimeout(1000);
-        
-        console.log('Reopening routes map...');
-        const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
-        if (await mapRoutes.isVisible().catch(() => false)) {
-          await mapRoutes.click({ timeout: 3000, force: true }).catch(() => undefined);
-        }
-      }
-    }
+    console.log('Using History API (goBack) to exit Seat Layout properly...');
+    await this.page.goBack().catch((e) => console.log('goBack error: ' + e.message));
+    await this.page.waitForTimeout(1000);
+    // Explicitly wait for the routes table to fade in so subsequent Playwright checks don't instantly skip
+    await this.waitForRoutesPageReady(5000).catch(() => false);
   }
 
   private appendSummary(markdown: string): void {
