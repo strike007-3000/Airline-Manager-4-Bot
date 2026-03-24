@@ -373,6 +373,7 @@ export class PricingUtils {
     const candidateSelectors = [routeEntrySelectorFamily.selector];
     const routeLinks: Locator[] = [];
     const seenLinks = new Set<string>();
+    const maxAcceptedCandidates = Math.max(1, this.maxRouteDiscoveryAttemptsPerRun);
     let selectorFamiliesExamined = 0;
 
     for (const selector of candidateSelectors) {
@@ -389,6 +390,11 @@ export class PricingUtils {
       }
 
       for (let index = 0; index < candidateCount; index++) {
+        if (routeLinks.length >= maxAcceptedCandidates) {
+          console.log(`findRouteLinksInContainer reached accepted candidate cap (${maxAcceptedCandidates}) before click attempts.`);
+          break;
+        }
+
         const candidate = candidates.nth(index);
         if (!(await candidate.isVisible().catch(() => false))) {
           continue;
@@ -396,13 +402,17 @@ export class PricingUtils {
 
         const linkText = await this.readVisibleText(candidate);
         if (!this.isLikelyRouteLinkText(linkText)) {
-          const sampleText = await this.getContainerTextSample(candidate);
-          const hasDepartAnchor = /\bdepart\b/i.test(sampleText);
-          const hasRouteNumber = /#ST-\d{3,}/i.test(sampleText);
-          const looksBlueLink = await this.isLinkStyledCandidate(candidate);
-          if (!looksBlueLink || !hasDepartAnchor || !hasRouteNumber) {
-            continue;
-          }
+          continue;
+        }
+
+        const sampleText = await this.getContainerTextSample(candidate);
+        if (!this.hasRequiredRouteContext(sampleText)) {
+          continue;
+        }
+
+        const looksBlueLink = await this.isLinkStyledCandidate(candidate);
+        if (!looksBlueLink) {
+          continue;
         }
 
         const dedupeKey = [linkText, await candidate.getAttribute('href').catch(() => ''), await candidate.evaluate(el => String((el as { outerHTML?: string }).outerHTML ?? '').slice(0, 160)).catch(() => '')].join('::');
@@ -411,10 +421,9 @@ export class PricingUtils {
         }
 
         seenLinks.add(dedupeKey);
-        const containerSample = await this.getContainerTextSample(candidate);
         const rowText = await this.readRowText(candidate);
         routeLinks.push(candidate);
-        console.log(`findRouteLinksInContainer accepted route link ${routeLinks.length} from "${containerSelector}": text="${linkText || '[no visible text found]'}", parentSample="${containerSample}", rowText="${rowText.slice(0, 200) || '[no row text found]'}"`);
+        console.log(`findRouteLinksInContainer accepted route link ${routeLinks.length} from "${containerSelector}": text="${linkText || '[no visible text found]'}", parentSample="${sampleText}", rowText="${rowText.slice(0, 200) || '[no row text found]'}"`);
       }
 
       if (routeLinks.length > 0) {
@@ -577,25 +586,48 @@ export class PricingUtils {
     }
 
     const parentSample = await this.getContainerTextSample(candidate);
-    return /#ST-\d{3,}/i.test(parentSample) || /[A-Z]{3}\s*-\s*[A-Z]{3}/.test(parentSample) || /\bDepart\b/i.test(parentSample);
+    return this.hasRequiredRouteContext(parentSample) || /[A-Z]{3}\s*-\s*[A-Z]{3}/.test(parentSample);
   }
 
   private async isLikelyRouteEntryCandidate(candidate: Locator): Promise<boolean> {
     const linkText = await this.readVisibleText(candidate);
     if (this.isLikelyRouteLinkText(linkText)) {
-      return true;
+      const sampleText = await this.getContainerTextSample(candidate);
+      return this.hasRequiredRouteContext(sampleText);
     }
 
     const sampleText = await this.getContainerTextSample(candidate);
-    const hasDepartAnchor = /\bdepart\b/i.test(sampleText);
-    const hasRouteNumber = /#ST-\d{3,}/i.test(sampleText);
-    const hasRoutePattern = /[A-Z]{3}\s*-\s*[A-Z]{3}/.test(sampleText);
-
-    return hasDepartAnchor && (hasRouteNumber || hasRoutePattern);
+    return this.hasRequiredRouteContext(sampleText);
   }
 
   private isLikelyRouteLinkText(text: string): boolean {
-    return /[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9]/i.test(text);
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized.length < 7) {
+      return false;
+    }
+
+    if (this.isDisallowedRouteCandidateText(normalized)) {
+      return false;
+    }
+
+    return /\b[A-Z]{3}\s*-\s*[A-Z]{3}\s*-\s*[A-Z0-9][A-Z0-9\s/-]*\b/i.test(normalized);
+  }
+
+  private hasRequiredRouteContext(text: string): boolean {
+    return /#ST-\d{3,}/i.test(text) && /\bDepart\b/i.test(text);
+  }
+
+  private isDisallowedRouteCandidateText(text: string): boolean {
+    const normalized = text.trim();
+    if (normalized.length < 7) {
+      return true;
+    }
+
+    if (/^\d+$/.test(normalized)) {
+      return true;
+    }
+
+    return /^(next|prev|previous)$/i.test(normalized);
   }
 
   private async isLinkStyledCandidate(candidate: Locator): Promise<boolean> {
