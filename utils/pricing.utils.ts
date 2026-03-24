@@ -43,6 +43,7 @@ export class PricingUtils {
   private readonly githubStepSummary?: string;
   private readonly maxPriceUpdatesPerRun: number;
   private readonly maxRouteDiscoveryAttemptsPerRun: number;
+  private readonly pricingDeadlineMs: number;
   private readonly gameMode: string;
   private readonly multipliers: PriceMultipliers;
   private routeListDiagnosticsLogged = false;
@@ -55,6 +56,7 @@ export class PricingUtils {
       'MAX_ROUTE_DISCOVERY_ATTEMPTS_PER_RUN',
       Math.max(3, Math.min(this.maxPriceUpdatesPerRun, 6)),
     );
+    this.pricingDeadlineMs = ConfigUtils.optionalNumber('PRICING_DEADLINE_MS', 15000);
     this.gameMode = ConfigUtils.optionalString('GAME_MODE', 'easy').toLowerCase();
     this.multipliers = {
       economy: this.getMultiplierFromPercent('EASY_MODE_ECONOMY_MULTIPLIER_PERCENT', 110),
@@ -157,14 +159,37 @@ export class PricingUtils {
 
     console.log('Pre-departure Easy mode ticket-price check started...');
     console.log(`Route discovery attempt cap for this run: ${this.maxRouteDiscoveryAttemptsPerRun}. Price update cap: ${this.maxPriceUpdatesPerRun}.`);
+    const runStartedAt = Date.now();
+    const runDeadline = runStartedAt + this.pricingDeadlineMs;
+    console.log(`Pricing deadline budget: ${this.pricingDeadlineMs}ms.`);
 
-    const routeLinks = await this.findPriceButtons();
+    let routeLinks: Locator[] = [];
+    try {
+      routeLinks = await this.findPriceButtons();
+    } catch (error) {
+      console.warn('Pricing discovery failed; skipping pricing update and continuing.', error);
+      this.appendSummary('## Dynamic ticket pricing\n- Skipped pricing update because route discovery failed.');
+      return;
+    }
+
+    if (this.isDeadlineExceeded(runDeadline)) {
+      console.warn(`Pricing deadline reached (${this.pricingDeadlineMs}ms) before route processing started; skipping pricing update.`);
+      this.appendSummary('## Dynamic ticket pricing\n- Skipped pricing update because pricing deadline was reached before route processing.');
+      return;
+    }
+
     console.log(`Found ${routeLinks.length} eligible route links on the routes page.`);
     let updatedFlights = 0;
     let inspectedFlights = 0;
+    let pricingStoppedByDeadline = false;
 
     for (const routeLink of routeLinks.slice(0, this.maxRouteDiscoveryAttemptsPerRun)) {
       if (updatedFlights >= this.maxPriceUpdatesPerRun) {
+        break;
+      }
+      if (this.isDeadlineExceeded(runDeadline)) {
+        pricingStoppedByDeadline = true;
+        console.log(`Pricing deadline reached after inspecting ${inspectedFlights} routes; stopping further pricing updates.`);
         break;
       }
 
@@ -176,22 +201,33 @@ export class PricingUtils {
         continue;
       }
 
-      const openedRouteDetails = await this.openRouteDetails(routeLink, inspectedFlights);
+      const openedRouteDetails = await this.openRouteDetails(routeLink, inspectedFlights, runDeadline);
       if (!openedRouteDetails) {
         console.log(`route skipped [details not opened]: ${rowText.slice(0, 200)}`);
+        if (this.isDeadlineExceeded(runDeadline)) {
+          pricingStoppedByDeadline = true;
+          break;
+        }
         continue;
       }
 
-      const seatLayoutReady = await this.ensureSeatLayoutExpanded();
+      const seatLayoutReady = await this.ensureSeatLayoutExpanded(runDeadline);
       if (!seatLayoutReady) {
         console.log(`route skipped [seat layout unavailable]: ${rowText.slice(0, 200)}`);
-        await this.returnToRoutesList();
+        await this.returnToRoutesList(runDeadline);
+        if (this.isDeadlineExceeded(runDeadline)) {
+          pricingStoppedByDeadline = true;
+          break;
+        }
         continue;
       }
 
-      const changedAnyPrice = await this.updateVisiblePriceInputs(inspectedFlights, rowText);
+      const changedAnyPrice = await this.updateVisiblePriceInputs(inspectedFlights, rowText, runDeadline);
       await this.closePopupIfOpen();
-      await this.returnToRoutesList();
+      await this.returnToRoutesList(runDeadline);
+      if (this.isDeadlineExceeded(runDeadline)) {
+        pricingStoppedByDeadline = true;
+      }
 
       if (changedAnyPrice) {
         updatedFlights += 1;
@@ -201,7 +237,9 @@ export class PricingUtils {
       }
     }
 
-    const summary = updatedFlights > 0
+    const summary = pricingStoppedByDeadline
+      ? `## Dynamic ticket pricing\n- Pricing deadline reached after ${inspectedFlights} route inspections; updated ${updatedFlights} flights before exit.`
+      : updatedFlights > 0
       ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights using Easy mode multipliers before departures.`
       : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures. Inspected ${inspectedFlights} route details pages.`;
     this.appendSummary(summary);
@@ -674,15 +712,22 @@ export class PricingUtils {
     return rowText.includes('departed') || rowText.includes('airborne') || rowText.includes('arrived');
   }
 
-  private async openRouteDetails(routeLink: Locator, controlIndex: number): Promise<boolean> {
+  private async openRouteDetails(routeLink: Locator, controlIndex: number, deadlineAt: number): Promise<boolean> {
+    if (this.isDeadlineExceeded(deadlineAt)) {
+      return false;
+    }
+
     const linkText = ((await routeLink.innerText().catch(() => '')) || (await routeLink.textContent().catch(() => '')) || '').replace(/\s+/g, ' ').trim();
     const priorSeatLayoutVisibility = await this.page.getByText(/seat layout/i).first().isVisible().catch(() => false);
     const priorEditorVisible = await this.getPricingEditorState().catch(() => undefined);
 
     await routeLink.click().catch(() => undefined);
-    await this.page.waitForTimeout(750);
+    const pauseAfterClick = this.getBoundedTimeout(750, deadlineAt);
+    if (pauseAfterClick > 0) {
+      await this.page.waitForTimeout(pauseAfterClick);
+    }
 
-    const detailsOpened = await this.waitForRouteDetailsOpen(priorSeatLayoutVisibility, Boolean(priorEditorVisible), 4000);
+    const detailsOpened = await this.waitForRouteDetailsOpen(priorSeatLayoutVisibility, Boolean(priorEditorVisible), this.getBoundedTimeout(4000, deadlineAt));
     if (detailsOpened) {
       console.log(`route details opened [${controlIndex}]: ${linkText || '[no route link text found]'}`);
       return true;
@@ -692,7 +737,11 @@ export class PricingUtils {
     return false;
   }
 
-  private async ensureSeatLayoutExpanded(): Promise<boolean> {
+  private async ensureSeatLayoutExpanded(deadlineAt: number): Promise<boolean> {
+    if (this.isDeadlineExceeded(deadlineAt)) {
+      return false;
+    }
+
     const seatLayoutHeader = this.page.getByText(/seat layout/i).first();
     if (!(await seatLayoutHeader.isVisible().catch(() => false))) {
       return false;
@@ -705,7 +754,10 @@ export class PricingUtils {
     }
 
     await seatLayoutHeader.click().catch(() => undefined);
-    await this.page.waitForTimeout(400);
+    const expandPause = this.getBoundedTimeout(400, deadlineAt);
+    if (expandPause > 0) {
+      await this.page.waitForTimeout(expandPause);
+    }
 
     const visibleInputsAfterExpand = await this.countVisibleFareInputs();
     if (visibleInputsAfterExpand > 0) {
@@ -717,7 +769,11 @@ export class PricingUtils {
     return false;
   }
 
-  private async updateVisiblePriceInputs(controlIndex: number, routeName: string): Promise<boolean> {
+  private async updateVisiblePriceInputs(controlIndex: number, routeName: string, deadlineAt: number): Promise<boolean> {
+    if (this.isDeadlineExceeded(deadlineAt)) {
+      return false;
+    }
+
     const editorState = await this.getPricingEditorState();
     if (!editorState) {
       console.log(`route ${controlIndex} pricing editor was not confirmed because fare inputs or Auto/Save controls were missing.`);
@@ -726,7 +782,7 @@ export class PricingUtils {
 
     console.log(`fare inputs found for route ${controlIndex}: ${editorState.fareInputsVisible}`);
 
-    const autoApplied = await this.applyAutoPricing(controlIndex, editorState);
+    const autoApplied = await this.applyAutoPricing(controlIndex, editorState, deadlineAt);
     if (!autoApplied) {
       console.log(`Pricing control ${controlIndex} opened, but the Auto baseline could not be confirmed.`);
       return false;
@@ -758,7 +814,10 @@ export class PricingUtils {
     const updated = results.some(result => result.changed);
     if (updated) {
       await editorState.saveButton.click();
-      await this.page.waitForTimeout(500);
+      const savePause = this.getBoundedTimeout(500, deadlineAt);
+      if (savePause > 0) {
+        await this.page.waitForTimeout(savePause);
+      }
       console.log(`save clicked for route ${controlIndex}.`);
     } else {
       console.log(`route ${controlIndex} Auto-based fare targets already matched the visible values; Save was not clicked.`);
@@ -798,7 +857,11 @@ export class PricingUtils {
     return undefined;
   }
 
-  private async applyAutoPricing(controlIndex: number, editorState: PricingEditorState): Promise<boolean> {
+  private async applyAutoPricing(controlIndex: number, editorState: PricingEditorState, deadlineAt: number): Promise<boolean> {
+    if (this.isDeadlineExceeded(deadlineAt)) {
+      return false;
+    }
+
     const fareInputsBeforeAuto = await this.captureVisibleFareSnapshot();
     if (!(await editorState.autoButton.isVisible().catch(() => false))) {
       console.log(`route ${controlIndex} has no visible Auto button in the seat layout.`);
@@ -806,7 +869,7 @@ export class PricingUtils {
     }
 
     await editorState.autoButton.click();
-    const autoApplied = await this.waitForAutoFarePopulation(fareInputsBeforeAuto);
+    const autoApplied = await this.waitForAutoFarePopulation(fareInputsBeforeAuto, this.getBoundedTimeout(5000, deadlineAt));
     if (autoApplied) {
       console.log(`route ${controlIndex} Auto pricing baseline captured.`);
     } else {
@@ -846,6 +909,10 @@ export class PricingUtils {
   }
 
   private async waitForAutoFarePopulation(previousSnapshot: Map<string, number>, timeoutMs = 5000): Promise<boolean> {
+    if (timeoutMs <= 0) {
+      return false;
+    }
+
     const startedAt = Date.now();
     const deadline = startedAt + timeoutMs;
 
@@ -954,10 +1021,20 @@ export class PricingUtils {
     return fareInputs.count().catch(() => 0);
   }
 
-  private async returnToRoutesList(): Promise<void> {
+  private async returnToRoutesList(deadlineAt: number): Promise<void> {
+    if (this.isDeadlineExceeded(deadlineAt)) {
+      return;
+    }
+
     await this.page.goBack().catch(() => undefined);
-    await this.page.waitForTimeout(750);
-    await this.waitForRoutesPageReady().catch(() => false);
+    const backPause = this.getBoundedTimeout(750, deadlineAt);
+    if (backPause > 0) {
+      await this.page.waitForTimeout(backPause);
+    }
+    const readinessTimeout = this.getBoundedTimeout(5000, deadlineAt);
+    if (readinessTimeout > 0) {
+      await this.waitForRoutesPageReady(readinessTimeout).catch(() => false);
+    }
   }
 
   private async closePopupIfOpen(): Promise<void> {
@@ -978,5 +1055,13 @@ export class PricingUtils {
 
   private getMultiplierFromPercent(name: string, defaultPercent: number): number {
     return ConfigUtils.optionalNumber(name, defaultPercent) / 100;
+  }
+
+  private isDeadlineExceeded(deadlineAt: number): boolean {
+    return Date.now() >= deadlineAt;
+  }
+
+  private getBoundedTimeout(requestedMs: number, deadlineAt: number): number {
+    return Math.max(0, Math.min(requestedMs, deadlineAt - Date.now()));
   }
 }
