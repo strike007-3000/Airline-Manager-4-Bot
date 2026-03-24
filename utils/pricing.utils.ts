@@ -124,7 +124,8 @@ export class PricingUtils {
         ]);
       } catch {
         console.log(`Details did not open cleanly for route: ${linkText}`);
-        await this.closePopupIfOpen();
+        await this.page.goBack().catch(() => undefined);
+        await this.page.waitForTimeout(1000);
         continue;
       }
 
@@ -135,7 +136,8 @@ export class PricingUtils {
       }
 
       if (!(await autoButton.isVisible().catch(() => false))) {
-        await this.closePopupIfOpen();
+        await this.page.goBack().catch(() => undefined);
+        await this.page.waitForTimeout(1000);
         continue;
       }
 
@@ -189,25 +191,16 @@ export class PricingUtils {
         }
       }
 
-      await this.closePopupIfOpen();
-    }
-
-    const summary = updatedFlights > 0
-      ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights using Easy mode multipliers before departures.`
-      : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update before departures. Inspected ${inspectedFlights} route details pages.`;
-    this.appendSummary(summary);
-    console.log(`Pre-departure Easy mode ticket-price check finished. Updated flights: ${updatedFlights}.`);
-  }
-
-  private async closePopupIfOpen(): Promise<void> {
-    const closeButton = this.page.locator('#popup .glyphicons, #popup .close, .modal-header .close').first();
-    if (await closeButton.isVisible().catch(() => false)) {
-      await closeButton.click();
-      await this.page.waitForTimeout(500);
-    } else {
+      // AM4 uses History states for its modals, so we just 'go back' to return to the flights list
       await this.page.goBack().catch(() => undefined);
       await this.page.waitForTimeout(1000);
     }
+
+    const summary = updatedFlights > 0
+      ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights.`
+      : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update. Inspected ${inspectedFlights} route details pages.`;
+    this.appendSummary(summary);
+    console.log(`Pre-departure ticket-price check finished. Updated flights: ${updatedFlights}.`);
   }
 
   private appendSummary(markdown: string): void {
