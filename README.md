@@ -41,6 +41,7 @@ Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** and
 - `GAME_MODE`: `easy`
 - `REPAIR_THRESHOLD_PERCENT`: optional wear threshold for bulk repairs, default `30`
 - `MAX_PRICE_UPDATES_PER_RUN`: `12`
+- `ENABLE_PRICING`: optional toggle for dynamic pricing (`true`/`false`, case-insensitive). Set to `false` to skip pricing safely.
 - `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT`: `110`
 - `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT`: `108`
 - `EASY_MODE_FIRST_MULTIPLIER_PERCENT`: `106`
@@ -134,12 +135,13 @@ If you want to keep usage even lower:
 3. Add `MAX_FUEL_PRICE` and `MAX_CO2_PRICE`.
 4. Add `GAME_MODE=easy`.
 5. Add `MAX_PRICE_UPDATES_PER_RUN=12`.
-6. Add `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT=110`.
-7. Add `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT=108`.
-8. Add `EASY_MODE_FIRST_MULTIPLIER_PERCENT=106`.
-9. Enable GitHub Actions.
-10. Run the workflow manually once.
-11. If everything looks good, leave the schedule enabled.
+6. Add `ENABLE_PRICING=false` for tonight’s production runs (set back to `true` when you want pricing updates again).
+7. Add `EASY_MODE_ECONOMY_MULTIPLIER_PERCENT=110`.
+8. Add `EASY_MODE_BUSINESS_MULTIPLIER_PERCENT=108`.
+9. Add `EASY_MODE_FIRST_MULTIPLIER_PERCENT=106`.
+10. Enable GitHub Actions.
+11. Run the workflow manually once.
+12. If everything looks good, leave the schedule enabled.
 
 ## Notes
 - Language of your game must be **English** for this bot to work.

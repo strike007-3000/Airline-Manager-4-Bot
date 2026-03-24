@@ -45,6 +45,7 @@ export class PricingUtils {
   private readonly maxRouteDiscoveryAttemptsPerRun: number;
   private readonly pricingDeadlineMs: number;
   private readonly gameMode: string;
+  private readonly enablePricing: boolean;
   private readonly multipliers: PriceMultipliers;
   private routeListDiagnosticsLogged = false;
 
@@ -58,6 +59,7 @@ export class PricingUtils {
     );
     this.pricingDeadlineMs = ConfigUtils.optionalNumber('PRICING_DEADLINE_MS', 15000);
     this.gameMode = ConfigUtils.optionalString('GAME_MODE', 'easy').toLowerCase();
+    this.enablePricing = ConfigUtils.optionalBoolean('ENABLE_PRICING', true);
     this.multipliers = {
       economy: this.getMultiplierFromPercent('EASY_MODE_ECONOMY_MULTIPLIER_PERCENT', 110),
       business: this.getMultiplierFromPercent('EASY_MODE_BUSINESS_MULTIPLIER_PERCENT', 108),
@@ -152,6 +154,11 @@ export class PricingUtils {
   }
 
   public async updateDailyEasyModePrices(): Promise<void> {
+    if (!this.enablePricing) {
+      console.log('Pricing disabled by ENABLE_PRICING=false; skipping.');
+      return;
+    }
+
     if (this.gameMode !== 'easy') {
       console.log(`Dynamic pricing skipped because GAME_MODE is set to ${this.gameMode}.`);
       return;

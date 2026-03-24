@@ -50,4 +50,21 @@ export class ConfigUtils {
             throw new Error(`Environment variable ${name} must contain valid JSON. ${error}`);
         }
     }
+
+    public static optionalBoolean(name: string, defaultValue: boolean): boolean {
+        const value = process.env[name]?.trim();
+        if (!value) {
+            return defaultValue;
+        }
+
+        const normalizedValue = value.toLowerCase();
+        if (normalizedValue === 'true') {
+            return true;
+        }
+        if (normalizedValue === 'false') {
+            return false;
+        }
+
+        throw new Error(`Environment variable ${name} must be either "true" or "false".`);
+    }
 }
