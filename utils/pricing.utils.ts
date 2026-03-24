@@ -87,18 +87,16 @@ export class PricingUtils {
         continue;
       }
 
-      const rowText = await link.evaluate((el: HTMLElement) => {
-        let curr: HTMLElement | null = el.parentElement;
-        for (let i = 0; i < 4 && curr; i++) {
-          if (curr.innerText && curr.innerText.match(/depart|demand/i)) {
-            return curr.innerText.toLowerCase();
-          }
-          curr = curr.parentElement;
-        }
-        return '';
-      }).catch(() => '');
+      const rowLocator = link.locator('xpath=ancestor::*[contains(@class, "list-group-item") or self::tr][1]');
+      const rowText = await rowLocator.innerText().catch(() => '');
 
-      if (rowText.includes('departed') || rowText.includes('airborne') || rowText.includes('arrived')) {
+      let flightCode = '';
+      const match = rowText.match(/#([A-Z0-9-]+)/i);
+      if (match) {
+        flightCode = match[1];
+      }
+
+      if (rowText.toLowerCase().includes('departed') || rowText.toLowerCase().includes('airborne') || rowText.toLowerCase().includes('arrived')) {
         continue;
       }
 
@@ -126,7 +124,7 @@ export class PricingUtils {
         console.log('Seat Layout or Auto button appeared.');
       } catch {
         console.log(`Details did not open cleanly for route: ${linkText}`);
-        await this.returnToRoutesList();
+        await this.returnToRoutesList(flightCode);
         continue;
       }
 
@@ -139,7 +137,7 @@ export class PricingUtils {
 
       if (!(await autoButton.isVisible().catch(() => false))) {
         console.log('Auto button not found even after expansion attempt.');
-        await this.returnToRoutesList();
+        await this.returnToRoutesList(flightCode);
         continue;
       }
 
@@ -197,7 +195,7 @@ export class PricingUtils {
       }
 
       console.log('Returning to routes list...');
-      await this.returnToRoutesList();
+      await this.returnToRoutesList(flightCode);
     }
 
     const summary = updatedFlights > 0
@@ -229,12 +227,54 @@ export class PricingUtils {
     return false;
   }
 
-  private async returnToRoutesList(): Promise<void> {
-    console.log('Using History API (goBack) to exit Seat Layout properly...');
-    await this.page.goBack().catch((e) => console.log('goBack error: ' + e.message));
+  private async returnToRoutesList(flightCode: string): Promise<void> {
+    console.log(`Navigating out of the seat-layout modal for flight code ${flightCode}...`);
+
+    let didClickBack = false;
+
+    // Strategy 1: The explicit AM4 "< FLIGHT_CODE" textual back chevron 
+    if (flightCode) {
+      const exactBackBtn = this.page.locator('.modal-header, .box-header').getByText(new RegExp(`<\\s*${flightCode}`, 'i')).first();
+      if (await exactBackBtn.isVisible().catch(() => false)) {
+        console.log(`Found explicit text back button ("< ${flightCode}"). Clicking it...`);
+        await exactBackBtn.click({ timeout: 3000, force: true }).catch(() => undefined);
+        didClickBack = true;
+      }
+    }
+
+    // Strategy 2: Chevron Icons
+    if (!didClickBack) {
+      const chevronIcon = this.page.locator('.modal-header, .box-header').locator('.fa-chevron-left, .glyphicons-chevron-left, i[class*="chevron-left"], span[class*="chevron-left"]').first();
+      if (await chevronIcon.isVisible().catch(() => false)) {
+        console.log('Found chevron icon. Clicking it...');
+        await chevronIcon.click({ timeout: 3000, force: true }).catch(() => undefined);
+        didClickBack = true;
+      }
+    }
+
+    // Strategy 3: Just click the leftmost part of the modal header
+    if (!didClickBack) {
+      const header = this.page.locator('.modal-header, .box-header').first();
+      if (await header.isVisible().catch(() => false)) {
+        console.log('Clicking top-left of modal header as fallback back button...');
+        await header.click({ position: { x: 10, y: 10 }, timeout: 3000, force: true }).catch(() => undefined);
+      }
+    }
+
     await this.page.waitForTimeout(1000);
-    // Explicitly wait for the routes table to fade in so subsequent Playwright checks don't instantly skip
-    await this.waitForRoutesPageReady(5000).catch(() => false);
+
+    // Evaluate if we accidentally closed the WHOLE map instead of just the flight details layer
+    const isRoutesVisible = await this.waitForRoutesPageReady(3000).catch(() => false);
+    
+    if (!isRoutesVisible) {
+      console.log('Routes list is not visible. Checking if we accidentally closed the whole map modal...');
+      const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
+      if (await mapRoutes.isVisible().catch(() => false)) {
+        console.log('Re-clicking #mapRoutes to reopen Routes modal safely without timing out...');
+        await mapRoutes.click({ timeout: 3000, force: true }).catch(() => undefined);
+        await this.waitForRoutesPageReady(5000).catch(() => false);
+      }
+    }
   }
 
   private appendSummary(markdown: string): void {
