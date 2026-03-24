@@ -31,8 +31,8 @@ export class PricingUtils {
   public async waitForRoutesPageReady(timeoutMs = 15000): Promise<boolean> {
     try {
       console.log('Waiting for routes page to be ready...');
-      // Look for any table row, list item, or route row that has 'Demand' or 'Depart' text
-      await this.page.locator('text=/Demand:|Depart/i').first().waitFor({ state: 'visible', timeout: timeoutMs });
+      // Look for the "Cost index" header that only appears when the Routes list loads
+      await this.page.getByText(/Cost index/i).first().waitFor({ state: 'visible', timeout: timeoutMs });
       return true;
     } catch {
       console.log(`Routes page readiness timed out after ${timeoutMs}ms.`);
