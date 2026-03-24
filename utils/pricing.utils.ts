@@ -56,8 +56,7 @@ export class PricingUtils {
 
     // A valid route link in AM4 has a spaced hyphen separating the name and airplane model (e.g. "OO-319-2 - A220-100")
     // This perfectly distinguishes it from pagination numbers like "1" or text like "Next".
-    const popupArea = this.page.locator('[role="dialog"], .modal, body').last();
-    const routeLinks = popupArea.locator('a, button, [role="link"], [role="button"]').filter({
+    const routeLinks = this.page.locator('a, button, [role="link"], [role="button"]').filter({
       hasText: /.+ - .+/i
     });
 
@@ -78,7 +77,9 @@ export class PricingUtils {
       }
 
       const link = routeLinks.nth(index);
-      if (!(await link.isVisible().catch(() => false))) continue;
+      if (!(await link.isVisible().catch(() => false))) {
+        continue;
+      }
 
       const linkText = await link.innerText().catch(() => '');
       // Ensure we explicitly reject pagination
@@ -87,7 +88,6 @@ export class PricingUtils {
       }
 
       // Check if it's already departed
-      // Read parent row text
       const rowText = await link.evaluate((el: HTMLElement) => {
         let curr: HTMLElement | null = el.parentElement;
         for (let i = 0; i < 4 && curr; i++) {
@@ -125,7 +125,7 @@ export class PricingUtils {
       } catch {
         console.log(`Details did not open cleanly for route: ${linkText}`);
         await this.page.goBack().catch(() => undefined);
-        await this.page.waitForTimeout(1000);
+        await this.waitForRoutesPageReady(5000).catch(() => false);
         continue;
       }
 
@@ -137,7 +137,7 @@ export class PricingUtils {
 
       if (!(await autoButton.isVisible().catch(() => false))) {
         await this.page.goBack().catch(() => undefined);
-        await this.page.waitForTimeout(1000);
+        await this.waitForRoutesPageReady(5000).catch(() => false);
         continue;
       }
 
@@ -147,37 +147,58 @@ export class PricingUtils {
       await this.page.waitForTimeout(1000);
 
       const passengerFareConfigs = [
-        { key: 'economy', multiplier: this.multipliers.economy },
-        { key: 'business', multiplier: this.multipliers.business },
-        { key: 'first', multiplier: this.multipliers.first },
-        { key: 'large', multiplier: this.multipliers.cargoLarge },
-        { key: 'heavy', multiplier: this.multipliers.cargoHeavy },
+        { label: /economy|eco|\by\b/i, multiplier: this.multipliers.economy },
+        { label: /business|bus|\bj\b/i, multiplier: this.multipliers.business },
+        { label: /first|\bf\b/i, multiplier: this.multipliers.first },
+        { label: /large|cargo large|\bl\b/i, multiplier: this.multipliers.cargoLarge },
+        { label: /heavy|cargo heavy|\bh\b/i, multiplier: this.multipliers.cargoHeavy },
       ];
 
       let changedAnyPrice = false;
 
-      // Update inputs
-      for (const config of passengerFareConfigs) {
-        // Since there is no visible text label (only SVGs of seats), we lookup by name, id, or placeholder.
-        const inputLocator = this.page.locator(`input:visible[name*="${config.key}" i], input:visible[id*="${config.key}" i], input:visible[placeholder*="${config.key}" i]`).first();
+      // Find all visible text inputs
+      const visibleInputs = this.page.locator('input:visible, select:visible');
+      const inputCount = await visibleInputs.count().catch(() => 0);
 
-        try {
-          if (await inputLocator.isVisible()) {
-            const currentValueStr = await inputLocator.inputValue();
-            const currentValue = parseInt(currentValueStr.replace(/,/g, '').trim(), 10);
-            
-            if (currentValue > 0) {
-              const nextValue = Math.max(1, Math.floor((currentValue * config.multiplier) / 10) * 10);
-              if (nextValue !== currentValue) {
-                await inputLocator.click();
-                await inputLocator.press('Control+a');
-                await inputLocator.fill(nextValue.toString());
-                changedAnyPrice = true;
-              }
-            }
+      for (let j = 0; j < inputCount; j++) {
+        const inputLocator = visibleInputs.nth(j);
+        
+        const name = await inputLocator.getAttribute('name').catch(() => '');
+        const id = await inputLocator.getAttribute('id').catch(() => '');
+        const placeholder = await inputLocator.getAttribute('placeholder').catch(() => '');
+        
+        // Grab nearby text (up to 2 levels of parent elements)
+        const nearbyText = await inputLocator.evaluate((el: HTMLElement) => {
+          let curr: HTMLElement | null = el.parentElement;
+          for (let i = 0; i < 2 && curr; i++) {
+            if (curr.innerText) return curr.innerText;
+            curr = curr.parentElement;
           }
-        } catch (e) {
-          // Ignore failures for specific fare classes
+          return '';
+        }).catch(() => '');
+
+        const descriptor = `${nearbyText} ${name} ${id} ${placeholder}`.toLowerCase();
+
+        for (const config of passengerFareConfigs) {
+          if (config.label.test(descriptor)) {
+            try {
+              const currentValueStr = await inputLocator.inputValue();
+              const currentValue = parseInt(currentValueStr.replace(/,/g, '').trim(), 10);
+              
+              if (currentValue > 0) {
+                const nextValue = Math.max(1, Math.floor((currentValue * config.multiplier) / 10) * 10);
+                if (nextValue !== currentValue) {
+                  await inputLocator.click();
+                  await inputLocator.press('Control+a');
+                  await inputLocator.fill(nextValue.toString());
+                  changedAnyPrice = true;
+                }
+              }
+            } catch (e) {
+              // Ignore failures for specific fare classes
+            }
+            break; // Matched a config for this input, stop checking other configs
+          }
         }
       }
 
@@ -193,7 +214,8 @@ export class PricingUtils {
 
       // AM4 uses History states for its modals, so we just 'go back' to return to the flights list
       await this.page.goBack().catch(() => undefined);
-      await this.page.waitForTimeout(1000);
+      // Explicitly wait for the routes table to be fully visible again so subsequent .isVisible() checks pass!
+      await this.waitForRoutesPageReady(5000).catch(() => false);
     }
 
     const summary = updatedFlights > 0
