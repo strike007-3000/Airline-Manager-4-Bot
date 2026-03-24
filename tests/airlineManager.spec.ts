@@ -1,4 +1,5 @@
 import { test } from '@playwright/test';
+import { appendFileSync } from 'fs';
 import { GeneralUtils } from '../utils/general.utils';
 import { FuelUtils } from '../utils/fuel.utils';
 import { CampaignUtils } from '../utils/campaign.utils';
@@ -49,10 +50,23 @@ test('All Operations', async ({ page }) => {
   const routesPageUrl = page.url();
   const routesPageTitle = await page.title().catch(() => '');
   console.log(`Opened routes page for pricing. URL: ${routesPageUrl || 'unavailable'}. Title: ${routesPageTitle || 'unavailable'}.`);
+  let pricingStepSummary = '- Pricing update completed before departures.';
   const routesPageReadyForPricing = await pricingUtils.waitForRoutesPageReady();
   if (routesPageReadyForPricing) {
-    await pricingUtils.updateDailyEasyModePrices();
+    try {
+      await pricingUtils.updateDailyEasyModePrices();
+    } catch (error) {
+      pricingStepSummary = '- Pricing step failed/skipped; departures still executed.';
+      console.warn('Pricing step failed; continuing with departures.', error);
+    }
+  } else {
+    pricingStepSummary = '- Pricing step skipped because routes page was not ready; departures still executed.';
   }
+
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Pricing step\n${pricingStepSummary}\n\n`);
+  }
+
   await generalUtils.closePopupIfOpen();
   await fleetUtils.departPlanes();
 
