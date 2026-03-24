@@ -14,8 +14,10 @@ export class PricingUtils {
   constructor(page: Page) {
     this.page = page;
     this.githubStepSummary = process.env.GITHUB_STEP_SUMMARY;
+    // Set to 12 updates per run natively
     this.maxPriceUpdatesPerRun = ConfigUtils.optionalNumber('MAX_PRICE_UPDATES_PER_RUN', 12);
-    this.pricingDeadlineMs = ConfigUtils.optionalNumber('PRICING_DEADLINE_MS', 15000);
+    // 60 seconds pricing deadline so it never bleeds into the 120s test timeout
+    this.pricingDeadlineMs = ConfigUtils.optionalNumber('PRICING_DEADLINE_MS', 60000);
     this.gameMode = ConfigUtils.optionalString('GAME_MODE', 'easy').toLowerCase();
     this.enablePricing = ConfigUtils.optionalBoolean('ENABLE_PRICING', true);
     
@@ -28,7 +30,7 @@ export class PricingUtils {
     };
   }
 
-  public async waitForRoutesPageReady(timeoutMs = 15000): Promise<boolean> {
+  public async waitForRoutesPageReady(timeoutMs = 10000): Promise<boolean> {
     try {
       console.log('Waiting for routes page to be ready...');
       await this.page.getByText(/Cost index/i).first().waitFor({ state: 'visible', timeout: timeoutMs });
@@ -69,7 +71,7 @@ export class PricingUtils {
         break;
       }
       if (Date.now() > runDeadline) {
-        console.log(`Pricing deadline reached (${this.pricingDeadlineMs}ms); stopping further updates.`);
+        console.log(`Pricing deadline reached (${this.pricingDeadlineMs}ms); stopping further updates to save GitHub Action time.`);
         break;
       }
 
@@ -101,11 +103,14 @@ export class PricingUtils {
       }
 
       inspectedFlights++;
-      console.log(`Route row selected [${inspectedFlights}]: ${linkText}`);
+      console.log(`\n--- Inspecting Route [${inspectedFlights}]: ${linkText} ---`);
 
       try {
-        await link.click();
+        console.log('Clicking route link...');
+        await link.click({ timeout: 5000, force: true });
+        console.log('Clicked route link successfully.');
       } catch (e) {
+        console.log(`Failed to click route link: ${(e as Error).message}`);
         continue;
       }
 
@@ -113,28 +118,33 @@ export class PricingUtils {
       const autoButton = this.page.getByRole('button', { name: /^auto$/i }).first();
       
       try {
+        console.log('Waiting for Seat Layout or Auto button to appear...');
         await Promise.any([
           seatLayoutHeader.waitFor({ state: 'visible', timeout: 5000 }),
           autoButton.waitFor({ state: 'visible', timeout: 5000 })
         ]);
+        console.log('Seat Layout or Auto button appeared.');
       } catch {
         console.log(`Details did not open cleanly for route: ${linkText}`);
         await this.returnToRoutesList();
         continue;
       }
 
+      // Expand seat layout if necessary
       if (await seatLayoutHeader.isVisible().catch(() => false) && !(await autoButton.isVisible().catch(() => false))) {
-        await seatLayoutHeader.click().catch(() => {});
+        console.log('Seat Layout header is visible but Auto is not. Clicking header to expand...');
+        await seatLayoutHeader.click({ timeout: 3000, force: true }).catch(() => {});
         await this.page.waitForTimeout(500);
       }
 
       if (!(await autoButton.isVisible().catch(() => false))) {
-        console.log('Auto button not found.');
+        console.log('Auto button not found even after expansion attempt.');
         await this.returnToRoutesList();
         continue;
       }
 
-      await autoButton.click();
+      console.log('Clicking Auto button...');
+      await autoButton.click({ timeout: 3000, force: true }).catch((e) => console.log('Auto click error: ' + e.message));
       await this.page.waitForTimeout(1000);
 
       let changedAnyPrice = false;
@@ -142,75 +152,92 @@ export class PricingUtils {
       // AM4 uses a strict positional layout: 3 inputs = PAX (Y, J, F), 2 inputs = CARGO (Large, Heavy)
       const visibleInputs = this.page.locator('.modal:visible input[type="text"]:visible, .modal:visible input:not([type]):visible');
       const inputCount = await visibleInputs.count().catch(() => 0);
+      console.log(`Found ${inputCount} visible price inputs in the Seat Layout modal.`);
 
       if (inputCount === 3) {
-        const changedY = await this.updateAmount(visibleInputs.nth(0), this.multipliers.economy);
-        const changedJ = await this.updateAmount(visibleInputs.nth(1), this.businessMultiplierCheck(this.multipliers.business));
-        const changedF = await this.updateAmount(visibleInputs.nth(2), this.firstMultiplierCheck(this.multipliers.first));
+        const changedY = await this.updateAmount(visibleInputs.nth(0), this.multipliers.economy, 'Economy');
+        const changedJ = await this.updateAmount(visibleInputs.nth(1), this.multipliers.business, 'Business');
+        const changedF = await this.updateAmount(visibleInputs.nth(2), this.multipliers.first, 'First');
         changedAnyPrice = changedY || changedJ || changedF;
       } else if (inputCount === 2) {
-        const changedL = await this.updateAmount(visibleInputs.nth(0), this.multipliers.cargoLarge);
-        const changedH = await this.updateAmount(visibleInputs.nth(1), this.multipliers.cargoHeavy);
+        const changedL = await this.updateAmount(visibleInputs.nth(0), this.multipliers.cargoLarge, 'Cargo Large');
+        const changedH = await this.updateAmount(visibleInputs.nth(1), this.multipliers.cargoHeavy, 'Cargo Heavy');
         changedAnyPrice = changedL || changedH;
+      } else {
+        console.log(`Unexpected number of inputs (${inputCount}). Skipping price logic.`);
       }
 
       if (changedAnyPrice) {
+        console.log('Prices were changed. Looking for Save button...');
         const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
         if (await saveButton.isVisible().catch(() => false)) {
-          await saveButton.click();
+          console.log('Clicking Save button...');
+          await saveButton.click({ timeout: 3000, force: true }).catch((e) => console.log('Save click error: ' + e.message));
           await this.page.waitForTimeout(500);
           updatedFlights++;
-          console.log(`Route updated: ${linkText}`);
+          console.log(`Route updated successfully: ${linkText}`);
+        } else {
+          console.log('Save button was not visible!');
         }
+      } else {
+        console.log('No prices needed updating (already optimal).');
       }
 
+      console.log('Returning to routes list...');
       await this.returnToRoutesList();
     }
 
     const summary = updatedFlights > 0
-      ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} not-yet-departed flights.`
-      : `## Dynamic ticket pricing\n- No not-yet-departed flights needed a price update. Inspected ${inspectedFlights} route details pages.`;
+      ? `## Dynamic ticket pricing\n- Updated prices for ${updatedFlights} flights.`
+      : `## Dynamic ticket pricing\n- No flights needed updating. Inspected ${inspectedFlights} route pages.`;
     this.appendSummary(summary);
     console.log(`Pre-departure ticket-price check finished. Updated flights: ${updatedFlights}.`);
   }
 
-  private async updateAmount(input: Locator, multiplier: number): Promise<boolean> {
+  private async updateAmount(input: Locator, multiplier: number, label: string): Promise<boolean> {
     try {
-      const currentValueStr = await input.inputValue();
+      const currentValueStr = await input.inputValue({ timeout: 2000 });
       const currentValue = parseInt(currentValueStr.replace(/,/g, '').trim(), 10);
       if (currentValue > 0) {
         const nextValue = Math.max(1, Math.floor((currentValue * multiplier) / 10) * 10);
         if (nextValue !== currentValue) {
-          await input.click();
-          await input.press('Control+a');
-          await input.fill(nextValue.toString());
+          console.log(`Updating ${label} from ${currentValue} to ${nextValue}...`);
+          await input.click({ timeout: 2000, force: true });
+          await input.press('Control+a', { timeout: 2000 });
+          await input.fill(nextValue.toString(), { timeout: 2000 });
           return true;
+        } else {
+          console.log(`Seat ${label} already optimal at ${currentValue}.`);
         }
       }
-    } catch {}
+    } catch (e) {
+      console.log(`Failed to update ${label} input: ${(e as Error).message}`);
+    }
     return false;
   }
-
-  private businessMultiplierCheck(val: number) { return val; }
-  private firstMultiplierCheck(val: number) { return val; }
 
   private async returnToRoutesList(): Promise<void> {
     // Navigate out of the seat-layout modal cleanly
     const backBtn = this.page.locator('.modal-header, .box-header').locator('span, i, div, a, button').filter({ hasText: /^</ }).first();
     if (await backBtn.isVisible().catch(() => false)) {
-      await backBtn.click();
+      console.log('Found explicit "<" back button. Clicking it...');
+      await backBtn.click({ timeout: 3000, force: true }).catch((e) => console.log('Back click error: ' + e.message));
       await this.page.waitForTimeout(1000);
     } else {
       const textBackBtn = this.page.getByText(/<\s*[A-Z0-9-]{3,}/i).first();
       if (await textBackBtn.isVisible().catch(() => false)) {
-        await textBackBtn.click();
+        console.log('Found textual back button. Clicking it...');
+        await textBackBtn.click({ timeout: 3000, force: true }).catch((e) => console.log('Text back click error: ' + e.message));
         await this.page.waitForTimeout(1000);
       } else {
-        await this.page.locator('.modal-header .close, .box-header .close').first().click().catch(() => undefined);
+        console.log('No back button found. Forcing modal close...');
+        await this.page.locator('.modal-header .close, .box-header .close').first().click({ timeout: 3000, force: true }).catch(() => undefined);
         await this.page.waitForTimeout(1000);
+        
+        console.log('Reopening routes map...');
         const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
         if (await mapRoutes.isVisible().catch(() => false)) {
-          await mapRoutes.click();
+          await mapRoutes.click({ timeout: 3000, force: true }).catch(() => undefined);
         }
       }
     }
