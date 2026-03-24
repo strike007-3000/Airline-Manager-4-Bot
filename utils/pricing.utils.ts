@@ -31,7 +31,6 @@ export class PricingUtils {
   public async waitForRoutesPageReady(timeoutMs = 15000): Promise<boolean> {
     try {
       console.log('Waiting for routes page to be ready...');
-      // Look for the "Cost index" header that only appears when the Routes list loads
       await this.page.getByText(/Cost index/i).first().waitFor({ state: 'visible', timeout: timeoutMs });
       return true;
     } catch {
@@ -54,9 +53,7 @@ export class PricingUtils {
     console.log('Pre-departure Easy mode ticket-price check started...');
     const runDeadline = Date.now() + this.pricingDeadlineMs;
 
-    // A valid route link in AM4 has a spaced hyphen separating the name and airplane model (e.g. "OO-319-2 - A220-100")
-    // This perfectly distinguishes it from pagination numbers like "1" or text like "Next".
-    const routeLinks = this.page.locator('a, button, [role="link"], [role="button"]').filter({
+    const routeLinks = this.page.locator('a:visible, button:visible, [role="link"]:visible, [role="button"]:visible').filter({
       hasText: /.+ - .+/i
     });
 
@@ -76,18 +73,18 @@ export class PricingUtils {
         break;
       }
 
+      await this.waitForRoutesPageReady(5000).catch(() => false);
+
       const link = routeLinks.nth(index);
       if (!(await link.isVisible().catch(() => false))) {
         continue;
       }
 
       const linkText = await link.innerText().catch(() => '');
-      // Ensure we explicitly reject pagination
       if (/^(next|prev|previous)$/i.test(linkText) || /^\d+$/.test(linkText)) {
         continue;
       }
 
-      // Check if it's already departed
       const rowText = await link.evaluate((el: HTMLElement) => {
         let curr: HTMLElement | null = el.parentElement;
         for (let i = 0; i < 4 && curr; i++) {
@@ -106,14 +103,12 @@ export class PricingUtils {
       inspectedFlights++;
       console.log(`Route row selected [${inspectedFlights}]: ${linkText}`);
 
-      // Click the route to open details
       try {
         await link.click();
       } catch (e) {
         continue;
       }
 
-      // Wait for seat layout or auto button
       const seatLayoutHeader = this.page.getByText(/seat layout/i).first();
       const autoButton = this.page.getByRole('button', { name: /^auto$/i }).first();
       
@@ -124,82 +119,39 @@ export class PricingUtils {
         ]);
       } catch {
         console.log(`Details did not open cleanly for route: ${linkText}`);
-        await this.page.goBack().catch(() => undefined);
-        await this.waitForRoutesPageReady(5000).catch(() => false);
+        await this.returnToRoutesList();
         continue;
       }
 
-      // Expand seat layout if necessary
       if (await seatLayoutHeader.isVisible().catch(() => false) && !(await autoButton.isVisible().catch(() => false))) {
         await seatLayoutHeader.click().catch(() => {});
         await this.page.waitForTimeout(500);
       }
 
       if (!(await autoButton.isVisible().catch(() => false))) {
-        await this.page.goBack().catch(() => undefined);
-        await this.waitForRoutesPageReady(5000).catch(() => false);
+        console.log('Auto button not found.');
+        await this.returnToRoutesList();
         continue;
       }
 
-      // Click Auto
       await autoButton.click();
-      // Wait for inputs to populate
       await this.page.waitForTimeout(1000);
-
-      const passengerFareConfigs = [
-        { label: /economy|eco|\by\b/i, multiplier: this.multipliers.economy },
-        { label: /business|bus|\bj\b/i, multiplier: this.multipliers.business },
-        { label: /first|\bf\b/i, multiplier: this.multipliers.first },
-        { label: /large|cargo large|\bl\b/i, multiplier: this.multipliers.cargoLarge },
-        { label: /heavy|cargo heavy|\bh\b/i, multiplier: this.multipliers.cargoHeavy },
-      ];
 
       let changedAnyPrice = false;
 
-      // Find all visible text inputs
-      const visibleInputs = this.page.locator('input:visible, select:visible');
+      // AM4 uses a strict positional layout: 3 inputs = PAX (Y, J, F), 2 inputs = CARGO (Large, Heavy)
+      const visibleInputs = this.page.locator('.modal:visible input[type="text"]:visible, .modal:visible input:not([type]):visible');
       const inputCount = await visibleInputs.count().catch(() => 0);
 
-      for (let j = 0; j < inputCount; j++) {
-        const inputLocator = visibleInputs.nth(j);
-        
-        const name = await inputLocator.getAttribute('name').catch(() => '');
-        const id = await inputLocator.getAttribute('id').catch(() => '');
-        const placeholder = await inputLocator.getAttribute('placeholder').catch(() => '');
-        
-        // Grab nearby text (up to 2 levels of parent elements)
-        const nearbyText = await inputLocator.evaluate((el: HTMLElement) => {
-          let curr: HTMLElement | null = el.parentElement;
-          for (let i = 0; i < 2 && curr; i++) {
-            if (curr.innerText) return curr.innerText;
-            curr = curr.parentElement;
-          }
-          return '';
-        }).catch(() => '');
-
-        const descriptor = `${nearbyText} ${name} ${id} ${placeholder}`.toLowerCase();
-
-        for (const config of passengerFareConfigs) {
-          if (config.label.test(descriptor)) {
-            try {
-              const currentValueStr = await inputLocator.inputValue();
-              const currentValue = parseInt(currentValueStr.replace(/,/g, '').trim(), 10);
-              
-              if (currentValue > 0) {
-                const nextValue = Math.max(1, Math.floor((currentValue * config.multiplier) / 10) * 10);
-                if (nextValue !== currentValue) {
-                  await inputLocator.click();
-                  await inputLocator.press('Control+a');
-                  await inputLocator.fill(nextValue.toString());
-                  changedAnyPrice = true;
-                }
-              }
-            } catch (e) {
-              // Ignore failures for specific fare classes
-            }
-            break; // Matched a config for this input, stop checking other configs
-          }
-        }
+      if (inputCount === 3) {
+        const changedY = await this.updateAmount(visibleInputs.nth(0), this.multipliers.economy);
+        const changedJ = await this.updateAmount(visibleInputs.nth(1), this.businessMultiplierCheck(this.multipliers.business));
+        const changedF = await this.updateAmount(visibleInputs.nth(2), this.firstMultiplierCheck(this.multipliers.first));
+        changedAnyPrice = changedY || changedJ || changedF;
+      } else if (inputCount === 2) {
+        const changedL = await this.updateAmount(visibleInputs.nth(0), this.multipliers.cargoLarge);
+        const changedH = await this.updateAmount(visibleInputs.nth(1), this.multipliers.cargoHeavy);
+        changedAnyPrice = changedL || changedH;
       }
 
       if (changedAnyPrice) {
@@ -212,10 +164,7 @@ export class PricingUtils {
         }
       }
 
-      // AM4 uses History states for its modals, so we just 'go back' to return to the flights list
-      await this.page.goBack().catch(() => undefined);
-      // Explicitly wait for the routes table to be fully visible again so subsequent .isVisible() checks pass!
-      await this.waitForRoutesPageReady(5000).catch(() => false);
+      await this.returnToRoutesList();
     }
 
     const summary = updatedFlights > 0
@@ -225,12 +174,52 @@ export class PricingUtils {
     console.log(`Pre-departure ticket-price check finished. Updated flights: ${updatedFlights}.`);
   }
 
-  private appendSummary(markdown: string): void {
-    if (!this.githubStepSummary) {
-      return;
+  private async updateAmount(input: Locator, multiplier: number): Promise<boolean> {
+    try {
+      const currentValueStr = await input.inputValue();
+      const currentValue = parseInt(currentValueStr.replace(/,/g, '').trim(), 10);
+      if (currentValue > 0) {
+        const nextValue = Math.max(1, Math.floor((currentValue * multiplier) / 10) * 10);
+        if (nextValue !== currentValue) {
+          await input.click();
+          await input.press('Control+a');
+          await input.fill(nextValue.toString());
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
+  private businessMultiplierCheck(val: number) { return val; }
+  private firstMultiplierCheck(val: number) { return val; }
+
+  private async returnToRoutesList(): Promise<void> {
+    // Navigate out of the seat-layout modal cleanly
+    const backBtn = this.page.locator('.modal-header, .box-header').locator('span, i, div, a, button').filter({ hasText: /^</ }).first();
+    if (await backBtn.isVisible().catch(() => false)) {
+      await backBtn.click();
+      await this.page.waitForTimeout(1000);
+    } else {
+      const textBackBtn = this.page.getByText(/<\s*[A-Z0-9-]{3,}/i).first();
+      if (await textBackBtn.isVisible().catch(() => false)) {
+        await textBackBtn.click();
+        await this.page.waitForTimeout(1000);
+      } else {
+        await this.page.locator('.modal-header .close, .box-header .close').first().click().catch(() => undefined);
+        await this.page.waitForTimeout(1000);
+        const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
+        if (await mapRoutes.isVisible().catch(() => false)) {
+          await mapRoutes.click();
+        }
+      }
     }
+  }
+
+  private appendSummary(markdown: string): void {
+    if (!this.githubStepSummary) return;
     try {
       appendFileSync(this.githubStepSummary, markdown + '\n\n');
-    } catch (e) {}
+    } catch {}
   }
 }
