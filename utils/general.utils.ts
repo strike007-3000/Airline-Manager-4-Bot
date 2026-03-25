@@ -30,11 +30,20 @@ export class GeneralUtils {
         }
 
         // Click the main 'Log In' button to open the modal
-        await page.locator('button', { hasText: /Log In/i }).first().click();
+        await page.evaluate(() => {
+            if (typeof (window as any).login === 'function') {
+                (window as any).login('show');
+            } else {
+                document.querySelector('.btn-grey')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }
+        });
         
-        await page.locator('#lEmail').click();
-        await page.locator('#lEmail').fill(this.username);
-        await page.locator('#lEmail').press('Tab');
+        const emailInput = page.locator('#lEmail');
+        await emailInput.waitFor({ state: 'visible', timeout: 15000 });
+        
+        await emailInput.click();
+        await emailInput.fill(this.username);
+        await emailInput.press('Tab');
         await page.locator('#lPass').click();
         await page.locator('#lPass').fill(this.password);
         await page.locator('#btnLogin').click();
