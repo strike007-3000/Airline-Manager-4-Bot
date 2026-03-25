@@ -19,7 +19,7 @@ export class PricingUtils {
     // 60 seconds pricing deadline so it never bleeds into the 120s test timeout
     this.pricingDeadlineMs = ConfigUtils.optionalNumber('PRICING_DEADLINE_MS', 60000);
     this.gameMode = ConfigUtils.optionalString('GAME_MODE', 'easy').toLowerCase();
-    this.enablePricing = ConfigUtils.optionalBoolean('ENABLE_PRICING', true);
+    this.enablePricing = ConfigUtils.optionalBoolean('ENABLE_PRICING', false);
     
     this.multipliers = {
       economy: ConfigUtils.optionalNumber('EASY_MODE_ECONOMY_MULTIPLIER_PERCENT', 110) / 100,
