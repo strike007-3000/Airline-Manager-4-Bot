@@ -26,10 +26,8 @@ export class FleetUtils {
                 console.log(`Departure alert says: ${modalText.substring(0, 150).replace(/\n/g, ' ')}`);
             }
             return modalText.replace(/\s+/g, ' ').trim().toLowerCase();
-        }
-        return '';
-    }
-        return '';
+            return '';
+    }        return '';
     }
 
     private maintenanceBlockingDeparture(modalText: string): boolean {
