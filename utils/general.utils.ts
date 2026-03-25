@@ -23,14 +23,21 @@ export class GeneralUtils {
 
         await page.goto('https://www.airlinemanager.com/');
 
-        await page.getByRole('button', { name: 'PLAY FREE NOW' }).click();
-        await page.getByRole('button', { name: 'Log in' }).click();
+        // Accept cookies if the popup exists (prevents click interception)
+        const acceptCookies = page.getByRole('button', { name: /accept/i });
+        if (await acceptCookies.isVisible().catch(() => false)) {
+            await acceptCookies.click().catch(() => {});
+        }
+
+        // Click the main 'Log In' button to open the modal
+        await page.locator('button', { hasText: /Log In/i }).first().click();
+        
         await page.locator('#lEmail').click();
         await page.locator('#lEmail').fill(this.username);
         await page.locator('#lEmail').press('Tab');
         await page.locator('#lPass').click();
         await page.locator('#lPass').fill(this.password);
-        await page.getByRole('button', { name: 'Log In', exact: true }).click();
+        await page.locator('#btnLogin').click();
 
         console.log('Logged in successfully!');
     }
