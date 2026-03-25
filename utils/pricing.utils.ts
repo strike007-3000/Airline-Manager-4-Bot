@@ -113,15 +113,22 @@ export class PricingUtils {
 
       try {
         console.log('Clicking route link...');
-        await link.click({ timeout: 5000, force: true });
+        await link.evaluate((el: HTMLElement) => {
+            const row = el.closest('.list-item, .list-group-item, tr, .row, [onclick]');
+            if (row && row instanceof HTMLElement) {
+                row.click();
+            } else {
+                el.click();
+            }
+        });
         console.log('Clicked route link successfully.');
       } catch (e) {
         console.log(`Failed to click route link: ${(e as Error).message}`);
         continue;
       }
 
-      const seatLayoutHeader = this.page.getByText(/seat layout|cargo|capacity/i).first();
-      const autoButton = this.page.getByRole('button', { name: /^auto$/i }).first();
+      const seatLayoutHeader = this.page.getByText(/seat layout|cargo|capacity|load|config/i).first();
+      const autoButton = this.page.locator('button, .btn, [role="button"]').filter({ hasText: /^auto([^a-z]|$)/i }).first();
       
       try {
         console.log('Waiting for Seat Layout or Auto button to appear...');
@@ -248,16 +255,20 @@ export class PricingUtils {
 
     let didClickBack = false;
 
-    // Strategy 1: Press Escape (often works in Bootstrap modals)
-    console.log('Pressing Escape key...');
-    await this.page.keyboard.press('Escape', { delay: 100 }).catch(() => undefined);
-    
-    // Strategy 2: If the modal is still open, click the exact top-left corner of the header where the back button sits
-    const header = this.page.locator('.modal-header, .box-header').first();
-    if (await header.isVisible().catch(() => false)) {
-      console.log('Clicking top-left of modal header...');
-      await header.click({ position: { x: 15, y: 15 }, timeout: 3000, force: true }).catch(() => undefined);
-      didClickBack = true;
+    // Specifically target the back button/chevron to go back to the list
+    const backBtn = this.page.locator('.modal-header .btn-back, .box-header .btn-back, .glyphicons-chevron-left, .fa-chevron-left, .fa-arrow-left').first();
+    if (await backBtn.isVisible().catch(() => false)) {
+        console.log('Clicking back button natively...');
+        await backBtn.click({ timeout: 3000, force: true }).catch(() => undefined);
+        didClickBack = true;
+    } else {
+        // Fallback: click the left side of the header where the back button is usually positioned
+        const header = this.page.locator('.modal-header, .box-header').first();
+        if (await header.isVisible().catch(() => false)) {
+          console.log('Clicking top-left of modal header to return...');
+          await header.click({ position: { x: 15, y: 15 }, timeout: 3000, force: true }).catch(() => undefined);
+          didClickBack = true;
+        }
     }
 
     await this.page.waitForTimeout(1000);
