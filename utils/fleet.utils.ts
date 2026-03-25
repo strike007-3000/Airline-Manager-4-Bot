@@ -17,13 +17,19 @@ export class FleetUtils {
         this.generalUtils = new GeneralUtils(page);
     }
 
-    private async getDepartureModalText() {
-        const modalText = await this.page.locator('#popup .modal-content').innerText().catch(() => '');
-        return modalText.replace(/\s+/g, ' ').trim().toLowerCase();
+    private async getDepartureModalText(): Promise<string> {
+        const popup = this.page.locator('#popup .modal-content').first();
+        if (await popup.isVisible().catch(() => false)) {
+            const modalText = await popup.innerText().catch(() => '');
+            if (modalText) {
+                console.log(`Departure modal says: ${modalText.substring(0, 150).replace(/\n/g, ' ')}`);
+            }
+            return modalText.replace(/\s+/g, ' ').trim().toLowerCase();
+        }
+        return '';
     }
 
-    private async maintenanceBlockingDeparture() {
-        const modalText = await this.getDepartureModalText();
+    private maintenanceBlockingDeparture(modalText: string): boolean {
         if (!modalText.includes('unable to depart')) {
             return false;
         }
@@ -70,7 +76,9 @@ export class FleetUtils {
             await departAll.click();
             await GeneralUtils.sleep(1500);
 
-            const maintenanceBlocked = await this.maintenanceBlockingDeparture();
+            const modalText = await this.getDepartureModalText();
+            const maintenanceBlocked = this.maintenanceBlockingDeparture(modalText);
+
             if (maintenanceBlocked) {
                 console.log('Departure blocked by due A-check or repair threshold; scheduling maintenance before retrying.');
                 const summary = await this.scheduleMaintenanceAndReturnToRoutes();
@@ -78,6 +86,15 @@ export class FleetUtils {
                     console.log('No additional maintenance could be scheduled, stopping departure attempts.');
                     break;
                 }
+            } else if (modalText !== '') {
+                if (modalText.includes('fuel') || modalText.includes('co2') || modalText.includes('quota')) {
+                    console.log('Departure blocked by fuel/CO2/quota constraints. Stopping to avoid infinite loop.');
+                    await this.generalUtils.closePopupIfOpen();
+                    break;
+                }
+                
+                // If it's a success popup or other non-blocking message, clear it to continue
+                await this.generalUtils.closePopupIfOpen();
             }
 
             departAllVisible = await this.page.locator('#departAll').isVisible().catch(() => false);
