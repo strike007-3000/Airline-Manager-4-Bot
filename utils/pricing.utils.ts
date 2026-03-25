@@ -113,14 +113,7 @@ export class PricingUtils {
 
       try {
         console.log('Clicking route link...');
-        await link.evaluate((el: HTMLElement) => {
-            const row = el.closest('.list-item, .list-group-item, tr, .row, [onclick]');
-            if (row && row instanceof HTMLElement) {
-                row.click();
-            } else {
-                el.click();
-            }
-        });
+        await link.click({ timeout: 5000 });
         console.log('Clicked route link successfully.');
       } catch (e) {
         console.log(`Failed to click route link: ${(e as Error).message}`);
@@ -253,40 +246,28 @@ export class PricingUtils {
   private async returnToRoutesList(flightCode: string): Promise<void> {
     console.log(`Navigating out of the seat-layout modal for flight code ${flightCode}...`);
 
-    let didClickBack = false;
-
-    // Specifically target the back button/chevron to go back to the list
-    const backBtn = this.page.locator('.modal-header .btn-back, .box-header .btn-back, .glyphicons-chevron-left, .fa-chevron-left, .fa-arrow-left').first();
+    // Navigate out of the seat-layout modal cleanly using yesterday's precise working logic
+    const backBtn = this.page.locator('.modal-header, .box-header').locator('span, i, div, a, button').filter({ hasText: /^</ }).first();
     if (await backBtn.isVisible().catch(() => false)) {
-        console.log('Clicking back button natively...');
-        await backBtn.click({ timeout: 3000, force: true }).catch(() => undefined);
-        didClickBack = true;
-    } else {
-        // Fallback: click the left side of the header where the back button is usually positioned
-        const header = this.page.locator('.modal-header, .box-header').first();
-        if (await header.isVisible().catch(() => false)) {
-          console.log('Clicking top-left of modal header to return...');
-          await header.click({ position: { x: 15, y: 15 }, timeout: 3000, force: true }).catch(() => undefined);
-          didClickBack = true;
-        }
-    }
-
-    await this.page.waitForTimeout(1000);
-
-    // Evaluate if we accidentally closed the WHOLE map instead of just the flight details layer
-    const isRoutesVisible = await this.waitForRoutesPageReady(3000).catch(() => false);
-    
-    if (!isRoutesVisible) {
-      console.log('Routes list is not visible. Checking if we accidentally closed the whole map modal...');
-      const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
-      // Close any stray modals
-      await this.page.locator('.modal-header .close, .box-header .close').first().click({ timeout: 2000, force: true }).catch(() => undefined);
+      console.log('Clicking main < back chevron...');
+      await backBtn.click();
       await this.page.waitForTimeout(1000);
-      
-      if (await mapRoutes.isVisible().catch(() => false)) {
-        console.log('Re-clicking #mapRoutes to reopen Routes modal safely without timing out...');
-        await mapRoutes.click({ timeout: 3000, force: true }).catch(() => undefined);
-        await this.waitForRoutesPageReady(5000).catch(() => false);
+    } else {
+      const textBackBtn = this.page.getByText(/<\s*[A-Z0-9-]{3,}/i).first();
+      if (await textBackBtn.isVisible().catch(() => false)) {
+        console.log('Clicking text back chevron...');
+        await textBackBtn.click();
+        await this.page.waitForTimeout(1000);
+      } else {
+        console.log('Fallback: clicking close X button or mapRoutes...');
+        await this.page.locator('.modal-header .close, .box-header .close').first().click().catch(() => undefined);
+        await this.page.waitForTimeout(1000);
+        const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
+        if (await mapRoutes.isVisible().catch(() => false)) {
+          console.log('Clicking mapRoutes image to reopen routes...');
+          await mapRoutes.click();
+          await this.waitForRoutesPageReady(5000).catch(() => false);
+        }
       }
     }
   }
