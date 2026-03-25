@@ -18,14 +18,17 @@ export class FleetUtils {
     }
 
     private async getDepartureModalText(): Promise<string> {
-        const popup = this.page.locator('#popup .modal-content').first();
+        // AM4 errors frequently appear as sweet-alerts or bootstrap alerts.
+        const popup = this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').first();
         if (await popup.isVisible().catch(() => false)) {
             const modalText = await popup.innerText().catch(() => '');
             if (modalText) {
-                console.log(`Departure modal says: ${modalText.substring(0, 150).replace(/\n/g, ' ')}`);
+                console.log(`Departure alert says: ${modalText.substring(0, 150).replace(/\n/g, ' ')}`);
             }
             return modalText.replace(/\s+/g, ' ').trim().toLowerCase();
         }
+        return '';
+    }
         return '';
     }
 
@@ -75,9 +78,9 @@ export class FleetUtils {
             const departAll = this.page.locator('#departAll');
             await departAll.click();
 
-            // Wait dynamically for the button to disappear or a popup to appear to avoid spamming clicks
+            // Wait dynamically for the button to disappear or an alert to appear to avoid spamming clicks
             await Promise.any([
-                this.page.locator('#popup .modal-content').waitFor({ state: 'visible', timeout: 15000 }).catch(() => {}),
+                this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').waitFor({ state: 'visible', timeout: 15000 }).catch(() => {}),
                 departAll.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {})
             ]);
             await this.page.waitForTimeout(500); // Small buffer for rendering/text population

@@ -126,8 +126,8 @@ export class PricingUtils {
       try {
         console.log('Waiting for Seat Layout or Auto button to appear...');
         await Promise.any([
-          seatLayoutHeader.waitFor({ state: 'visible', timeout: 5000 }),
-          autoButton.waitFor({ state: 'visible', timeout: 5000 })
+          seatLayoutHeader.waitFor({ state: 'visible', timeout: 15000 }),
+          autoButton.waitFor({ state: 'visible', timeout: 15000 })
         ]);
         console.log('Seat Layout or Auto button appeared.');
       } catch {
