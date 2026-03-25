@@ -74,7 +74,13 @@ export class FleetUtils {
 
             const departAll = this.page.locator('#departAll');
             await departAll.click();
-            await GeneralUtils.sleep(1500);
+
+            // Wait dynamically for the button to disappear or a popup to appear to avoid spamming clicks
+            await Promise.any([
+                this.page.locator('#popup .modal-content').waitFor({ state: 'visible', timeout: 15000 }).catch(() => {}),
+                departAll.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {})
+            ]);
+            await this.page.waitForTimeout(500); // Small buffer for rendering/text population
 
             const modalText = await this.getDepartureModalText();
             const maintenanceBlocked = this.maintenanceBlockingDeparture(modalText);

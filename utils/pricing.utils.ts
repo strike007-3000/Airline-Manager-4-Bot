@@ -120,7 +120,7 @@ export class PricingUtils {
         continue;
       }
 
-      const seatLayoutHeader = this.page.getByText(/seat layout/i).first();
+      const seatLayoutHeader = this.page.getByText(/seat layout|cargo|capacity/i).first();
       const autoButton = this.page.getByRole('button', { name: /^auto$/i }).first();
       
       try {
@@ -166,7 +166,7 @@ export class PricingUtils {
         const inputLocator = visibleInputs.nth(j);
         const valStr = await inputLocator.inputValue({ timeout: 1000 }).catch(() => '');
         // Only consider inputs that currently hold a numeric value (ticket prices)
-        if (valStr && !isNaN(parseInt(valStr.replace(/,/g, '').trim(), 10))) {
+        if (valStr && !isNaN(parseFloat(valStr.replace(/,/g, '').trim()))) {
           numericInputs.push(inputLocator);
         }
       }
@@ -179,8 +179,8 @@ export class PricingUtils {
         const changedF = await this.updateAmount(numericInputs[2], this.multipliers.first, 'First');
         changedAnyPrice = changedY || changedJ || changedF;
       } else if (numericInputs.length === 2) {
-        const changedL = await this.updateAmount(numericInputs[0], this.multipliers.cargoLarge, 'Cargo Large');
-        const changedH = await this.updateAmount(numericInputs[1], this.multipliers.cargoHeavy, 'Cargo Heavy');
+        const changedL = await this.updateAmount(numericInputs[0], this.multipliers.cargoLarge, 'Cargo Large', true);
+        const changedH = await this.updateAmount(numericInputs[1], this.multipliers.cargoHeavy, 'Cargo Heavy', true);
         changedAnyPrice = changedL || changedH;
       } else {
         console.log(`Unexpected number of numeric inputs (${numericInputs.length}). Skipping price logic.`);
@@ -213,12 +213,20 @@ export class PricingUtils {
     console.log(`Pre-departure ticket-price check finished. Updated flights: ${updatedFlights}.`);
   }
 
-  private async updateAmount(input: Locator, multiplier: number, label: string): Promise<boolean> {
+  private async updateAmount(input: Locator, multiplier: number, label: string, isCargo: boolean = false): Promise<boolean> {
     try {
       const currentValueStr = await input.inputValue({ timeout: 2000 });
-      const currentValue = parseInt(currentValueStr.replace(/,/g, '').trim(), 10);
+      const numericString = currentValueStr.replace(/,/g, '').trim();
+      const currentValue = isCargo ? parseFloat(numericString) : parseInt(numericString, 10);
+      
       if (currentValue > 0) {
-        const nextValue = Math.max(1, Math.floor((currentValue * multiplier) / 10) * 10);
+        let nextValue: number;
+        if (isCargo) {
+          nextValue = parseFloat((currentValue * multiplier).toFixed(2));
+        } else {
+          nextValue = Math.max(1, Math.floor((currentValue * multiplier) / 10) * 10);
+        }
+
         if (nextValue !== currentValue) {
           console.log(`Updating ${label} from ${currentValue} to ${nextValue}...`);
           await input.click({ timeout: 2000, force: true });
