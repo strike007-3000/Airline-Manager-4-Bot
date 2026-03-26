@@ -4,10 +4,12 @@ on:
   schedule:
     - cron: "0 22 * * *"
     - cron: "0 0,2,4,6,8 * * *"
+    - cron: "0 11,14,17,20 * * *"
 permissions:
   contents: read
 jobs:
   test:
+    if: ${{ github.event_name != 'schedule' || github.event.schedule != '0 11,14,17,20 * * *' || github.run_started_at < '2026-04-06T00:00:00Z' }}
     timeout-minutes: 10
     runs-on: ubuntu-22.04
     steps:
