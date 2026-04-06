@@ -93,14 +93,10 @@ That run should update the ticket prices of not-yet-departed Easy mode flights b
 ### 9. Let the schedule run automatically
 
 The default schedule is aligned to CET and runs at:
-- `23:00 CET` (`22:00 UTC`)
-- `01:00 CET` (`00:00 UTC`)
-- `03:00 CET` (`02:00 UTC`)
-- `05:00 CET` (`04:00 UTC`)
-- `07:00 CET` (`06:00 UTC`)
-- `09:00 CET` (`08:00 UTC`)
+- `Main Operations`: 23:00, 01:00, 03:00, 05:00, 07:00, 09:00, 12:00, 15:00, 18:00, 21:00 (UTC)
+- `Fuel Monitor`: Every 30 minutes (`*/30 * * * *`).
 
-If you want fewer GitHub minutes, reduce the cron schedule in `.github/workflows/playwright.yml`.
+If you want fewer GitHub minutes or less frequent runs, reduce the cron expressions in `.github/workflows/playwright.yml` or `.github/workflows/fuel-monitor.yml`.
 
 ### 10. High-Frequency Fuel Monitor
 
