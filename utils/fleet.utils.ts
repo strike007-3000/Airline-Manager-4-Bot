@@ -76,12 +76,14 @@ export class FleetUtils {
             const departAll = this.page.locator('#departAll');
             await departAll.click();
 
-            // Wait dynamically for the button to disappear or an alert to appear to avoid spamming clicks
+            // Wait dynamically for the button to disappear or an alert to appear
+            // We use a shorter timeout (5s) for the "no-alert/button-stays" case 
+            // since AM4 might just process the batch without a modal if there are many planes.
             await Promise.any([
-                this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').waitFor({ state: 'visible', timeout: 15000 }).catch(() => {}),
-                departAll.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {})
+                this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {}),
+                departAll.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
             ]);
-            await this.page.waitForTimeout(500); // Small buffer for rendering/text population
+            await this.page.waitForTimeout(200); // Minimal buffer for rendering
 
             const modalText = await this.getDepartureModalText();
             const maintenanceBlocked = this.maintenanceBlockingDeparture(modalText);

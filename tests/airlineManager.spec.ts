@@ -10,7 +10,7 @@ import { PricingUtils } from '../utils/pricing.utils';
 require('dotenv').config();
 
 test('All Operations', async ({ page }) => {
-  test.setTimeout(process.env.CI ? 120000 : 90000);
+  test.setTimeout(process.env.CI ? 240000 : 120000);
 
   const fuelUtils = new FuelUtils(page);
   const generalUtils = new GeneralUtils(page);
