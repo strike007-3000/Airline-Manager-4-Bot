@@ -13,6 +13,8 @@ This repository contains a bot for Airline Manager 4, built with Playwright and 
 - Schedule due A-Checks and repairs (30%+ wear by default), including a departure-time retry flow if maintenance blocks a flight.
 - Force CO2 purchases when holdings go negative, even if the market is expensive.
 - Change ticket prices once a day for Easy mode flights that have not departed yet, using simple built-in multipliers.
+- **High-Frequency Fuel Monitor**: An independent workflow that checks fuel and CO2 prices every 30 minutes, ensuring you never miss a low-price window even between main runs.
+
 
 ## Usage Instructions
 
@@ -99,6 +101,14 @@ The default schedule is aligned to CET and runs at:
 - `09:00 CET` (`08:00 UTC`)
 
 If you want fewer GitHub minutes, reduce the cron schedule in `.github/workflows/playwright.yml`.
+
+### 10. High-Frequency Fuel Monitor
+
+The bot now includes a separate, lightweight workflow (`fuel-monitor.yml`) that runs every **30 minutes**. 
+
+- **Automatic**: Checks fuel and CO2 every 30 mins and buys if below your thresholds.
+- **Manual Trigger**: Go to **Actions** > **Fuel Monitor (30m)** > **Run workflow** to check the market immediately.
+- **Efficiency**: This monitor is extremely fast and avoids unnecessary page loads.
 
 ## Maintenance behavior
 
