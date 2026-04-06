@@ -118,6 +118,24 @@ Bulk repairs now default to `30%` wear, configurable with `REPAIR_THRESHOLD_PERC
 
 The pricing step also runs immediately before departures on every workflow run, so there is no longer a separate UTC pricing-hour gate to configure.
 
+## Fuel / CO2 market intelligence
+
+The fuel purchaser keeps a local JSON history of in-game fuel and CO2 values, estimates upcoming consumption from the visible planned departures on the routes page, and uses simple threshold-based purchases instead of a more aggressive top-up strategy.
+
+This logic is driven only by what the bot observes inside Airline Manager 4. It does not use or react to any real-world fuel or carbon market data.
+
+The logic now:
+- snapshots planned departures before opening the fuel market
+- estimates hourly fuel and CO2 usage using configurable average burn-per-departure values
+- if fuel or CO2 is at or below the configured market-price threshold, it buys to full remaining capacity immediately
+- maintains minimum cover in hours
+- if fuel or CO2 falls below the configured minimum cover threshold, it buys to full remaining capacity immediately
+- if CO2 is already negative while the market is above the configured threshold, it buys a buffered top-up (at least enough to clear the deficit, otherwise about half the remaining capacity) before departures
+- if CO2 is already negative while the market is above the configured threshold, it keeps buying until the deficit is cleared
+- skips additional purchases whenever the current cover is already healthy
+
+Because GitHub-hosted runners are ephemeral, the price-history cache is most useful on a persistent runner or when your workflow preserves the file between runs.
+
 ## Free-tier guidance
 
 This setup is designed to stay inexpensive on GitHub Actions:
@@ -157,21 +175,3 @@ If you want to keep usage even lower:
 - This repository can be public as long as your login details stay in GitHub **Actions secrets** and your thresholds stay in GitHub **Actions variables**. Do not commit credentials or personal values directly into the repository.
 - If you still prefer not to expose the code publicly, you can clone this project and commit it to a private repository instead.
 - For questions, reach out on Discord: `muhittin852`.
-
-## Fuel / CO2 market intelligence
-
-The fuel purchaser keeps a local JSON history of in-game fuel and CO2 values, estimates upcoming consumption from the visible planned departures on the routes page, and uses simple threshold-based purchases instead of a more aggressive top-up strategy.
-
-This logic is driven only by what the bot observes inside Airline Manager 4. It does not use or react to any real-world fuel or carbon market data.
-
-The logic now:
-- snapshots planned departures before opening the fuel market
-- estimates hourly fuel and CO2 usage using configurable average burn-per-departure values
-- if fuel or CO2 is at or below the configured market-price threshold, it buys to full remaining capacity immediately
-- maintains minimum cover in hours
-- if fuel or CO2 falls below the configured minimum cover threshold, it buys to full remaining capacity immediately
-- if CO2 is already negative while the market is above the configured threshold, it buys a buffered top-up (at least enough to clear the deficit, otherwise about half the remaining capacity) before departures
-- if CO2 is already negative while the market is above the configured threshold, it keeps buying until the deficit is cleared
-- skips additional purchases whenever the current cover is already healthy
-
-Because GitHub-hosted runners are ephemeral, the price-history cache is most useful on a persistent runner or when your workflow preserves the file between runs.
