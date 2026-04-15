@@ -161,29 +161,36 @@ export class PricingUtils {
       console.log(`Found ${inputCount} visible inputs in the Seat Layout modal.`);
 
       // Since AM4 uses type="number" or untyped HTML inputs for prices, we grab all visible inputs.
-      let numericInputs: Locator[] = [];
+      // We also check for nearby text to identify the class (Economy, Business, First, Cargo)
+      let classInputs: { locator: Locator, label: string }[] = [];
       for (let j = 0; j < inputCount; j++) {
         const inputLocator = visibleInputs.nth(j);
-        const valStr = await inputLocator.inputValue({ timeout: 1000 }).catch(() => '');
-        // Only consider inputs that currently hold a numeric value (ticket prices)
-        if (valStr && !isNaN(parseFloat(valStr.replace(/,/g, '').trim()))) {
-          numericInputs.push(inputLocator);
+        
+        // Use evaluate to find the nearest descriptive label for this input
+        const detectedLabel = await inputLocator.evaluate((el: HTMLElement) => {
+          const row = el.closest('tr, .row, .input-group');
+          const text = row?.innerText?.toLowerCase() || '';
+          if (text.includes('eco')) return 'economy';
+          if (text.includes('bus')) return 'business';
+          if (text.includes('fir')) return 'first';
+          if (text.includes('large')) return 'cargoLarge';
+          if (text.includes('heavy') || text.includes('tra')) return 'cargoHeavy';
+          return '';
+        }).catch(() => '');
+
+        if (detectedLabel) {
+           classInputs.push({ locator: inputLocator, label: detectedLabel });
         }
       }
 
-      console.log(`Filtered to ${numericInputs.length} numeric price inputs.`);
+      console.log(`Detected ${classInputs.length} labelled price inputs.`);
 
-      if (numericInputs.length === 3) {
-        const changedY = await this.updateAmount(numericInputs[0], this.multipliers.economy, 'Economy');
-        const changedJ = await this.updateAmount(numericInputs[1], this.multipliers.business, 'Business');
-        const changedF = await this.updateAmount(numericInputs[2], this.multipliers.first, 'First');
-        changedAnyPrice = changedY || changedJ || changedF;
-      } else if (numericInputs.length === 2) {
-        const changedL = await this.updateAmount(numericInputs[0], this.multipliers.cargoLarge, 'Cargo Large', true);
-        const changedH = await this.updateAmount(numericInputs[1], this.multipliers.cargoHeavy, 'Cargo Heavy', true);
-        changedAnyPrice = changedL || changedH;
-      } else {
-        console.log(`Unexpected number of numeric inputs (${numericInputs.length}). Skipping price logic.`);
+      for (const item of classInputs) {
+          const multiplier = this.multipliers[item.label];
+          if (multiplier) {
+              const changed = await this.updateAmount(item.locator, multiplier, item.label, item.label.startsWith('cargo'));
+              if (changed) changedAnyPrice = true;
+          }
       }
 
       if (changedAnyPrice) {

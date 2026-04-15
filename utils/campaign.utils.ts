@@ -34,7 +34,8 @@ export class CampaignUtils {
         console.log('Create Campaign Started...');
 
         await this.page.getByRole('button', { name: ' Marketing' }).click();
-        await GeneralUtils.sleep(1000);
+        // Wait for the 'New campaign' button to appear as a signal the modal is ready
+        await this.page.getByRole('button', { name: ' New campaign' }).waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
 
         await this.createEcoFriendly();
 
