@@ -55,9 +55,9 @@ export class PricingUtils {
     console.log('Pre-departure Easy mode ticket-price check started...');
     const runDeadline = Date.now() + this.pricingDeadlineMs;
 
-    // Only look for links inside the main dashboard/routes container to avoid ghost links
-    const routesContainer = this.page.locator('#holding, #standard, .box-body').first();
-    const routeLinks = routesContainer.locator('a:visible, button:visible, [role="link"]:visible').filter({
+    // Look for links in the main content area (using a broader but safe selector)
+    const routesContainer = this.page.locator('#holding, #standard, .box-body, #routeList, #main-view').first();
+    const routeLinks = this.page.locator('a:visible, button:visible, [role="link"]:visible').filter({
       hasText: /.+ - .+/i
     });
 

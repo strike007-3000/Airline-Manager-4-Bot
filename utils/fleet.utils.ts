@@ -6,19 +6,18 @@ require('dotenv').config();
 
 export class FleetUtils {
     page: Page;
-    maxTry: number; // Added to prevent infinite loop in case of no fuel available
+    maxTry: number; // Added to prevent infinite loop
     maintenanceUtils: MaintenanceUtils;
     generalUtils: GeneralUtils;
 
     constructor(page: Page) {
         this.page = page;
-        this.maxTry = 8; // TODO: Find another way
+        this.maxTry = 8;
         this.maintenanceUtils = new MaintenanceUtils(page);
         this.generalUtils = new GeneralUtils(page);
     }
 
     private async getDepartureModalText(): Promise<string> {
-        // AM4 errors frequently appear as sweet-alerts or bootstrap alerts.
         const popup = this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').first();
         if (await popup.isVisible().catch(() => false)) {
             const modalText = await popup.innerText().catch(() => '');
@@ -66,7 +65,6 @@ export class FleetUtils {
         console.log('Preparing flights for departure with A-check and repair scheduling...');
         await this.scheduleMaintenanceAndReturnToRoutes();
 
-        // Use a more specific locator for the 'Depart All' button
         const departAllSelector = '#departAll';
         let departAllVisible = await this.page.locator(departAllSelector).isVisible().catch(() => false);
         console.log('Looking if there are any planes to be departed...');
@@ -78,15 +76,16 @@ export class FleetUtils {
             const departAll = this.page.locator(departAllSelector);
             await departAll.click();
 
-            // Wait dynamically for the button to disappear or an alert to appear
-            // We use a shorter timeout (5s) for the "batch processed" case
-            await Promise.any([
-                this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {}),
-                departAll.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+            // Wait specifically for the button to either disappear OR a success/error modal to appear
+            await Promise.all([
+                this.page.waitForResponse(response => response.url().includes('depart') && response.status() === 200, { timeout: 8000 }).catch(() => {}),
+                Promise.any([
+                    this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').waitFor({ state: 'visible', timeout: 8000 }).catch(() => {}),
+                    departAll.waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {})
+                ])
             ]);
             
-            // Minimal buffer for modal rendering
-            await this.page.waitForTimeout(500); 
+            await this.page.waitForTimeout(1000); 
 
             const modalText = await this.getDepartureModalText();
             const maintenanceBlocked = this.maintenanceBlockingDeparture(modalText);
@@ -104,12 +103,9 @@ export class FleetUtils {
                     await this.generalUtils.closePopupIfOpen();
                     break;
                 }
-                
-                // Continue if it's a generic success message
                 await this.generalUtils.closePopupIfOpen();
             }
 
-            // Sync state and check if button is still there for another batch
             await GeneralUtils.sleep(1000);
             departAllVisible = await this.page.locator(departAllSelector).isVisible().catch(() => false);
             count++;
