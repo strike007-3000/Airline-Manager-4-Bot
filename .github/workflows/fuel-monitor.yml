@@ -3,7 +3,7 @@ on:
   # Scheduling moved to cron-job.org for better reliability
   workflow_dispatch:
   # schedule:
-  #   - cron: "*/30 * * * *"
+  # - cron: "*/30 * * * *"
 permissions:
   contents: read
 jobs:
