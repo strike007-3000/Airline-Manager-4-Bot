@@ -55,12 +55,14 @@ export class PricingUtils {
     console.log('Pre-departure Easy mode ticket-price check started...');
     const runDeadline = Date.now() + this.pricingDeadlineMs;
 
-    const routeLinks = this.page.locator('a:visible, button:visible, [role="link"]:visible, [role="button"]:visible').filter({
+    // Only look for links inside the main dashboard/routes container to avoid ghost links
+    const routesContainer = this.page.locator('#holding, #standard, .box-body').first();
+    const routeLinks = routesContainer.locator('a:visible, button:visible, [role="link"]:visible').filter({
       hasText: /.+ - .+/i
     });
 
     const count = await routeLinks.count().catch(() => 0);
-    console.log(`Found ${count} eligible route links matching route text pattern.`);
+    console.log(`[Pricing] Found ${count} potential route links inside the active container.`);
 
     let updatedFlights = 0;
     let inspectedFlights = 0;
@@ -109,32 +111,31 @@ export class PricingUtils {
       }
 
       inspectedFlights++;
-      console.log(`\n--- Inspecting Route [${inspectedFlights}]: ${linkText} ---`);
+      console.log(`\n--- [Pricing] Inspecting Route [${inspectedFlights}]: ${linkText} [Code: ${flightCode || 'Unknown'}] ---`);
 
       try {
-        console.log('Clicking route link...');
+        console.log(`[${flightCode}] Clicking route link...`);
         await link.click({ timeout: 5000 });
-        console.log('Clicked route link successfully.');
-      } catch (e) {
-        console.log(`Failed to click route link: ${(e as Error).message}`);
-        continue;
-      }
-
-      const seatLayoutHeader = this.page.getByText(/seat layout|cargo|capacity|load|config/i).first();
-      const autoButton = this.page.locator('button, .btn, [role="button"]').filter({ hasText: /^auto([^a-z]|$)/i }).first();
-      
-      try {
-        console.log('Waiting for Seat Layout or Auto button to appear...');
+        
+        // Wait for ANY signal that the detail view is open
         await Promise.any([
-          seatLayoutHeader.waitFor({ state: 'visible', timeout: 15000 }),
-          autoButton.waitFor({ state: 'visible', timeout: 15000 })
-        ]);
-        console.log('Seat Layout or Auto button appeared.');
-      } catch {
-        console.log(`Details did not open cleanly for route: ${linkText}`);
+          this.page.getByText(/seat layout|cargo|capacity|load|config/i).first().waitFor({ state: 'visible', timeout: 10000 }),
+          this.page.locator('button, .btn').filter({ hasText: /^auto([^a-z]|$)/i }).first().waitFor({ state: 'visible', timeout: 10000 }),
+          this.page.locator('.modal-header, .box-header').waitFor({ state: 'visible', timeout: 10000 })
+        ]).catch(() => {
+           throw new Error('Route detail modal failed to open or was too slow.');
+        });
+
+      } catch (e) {
+        console.warn(`[${flightCode}] Failed to enter route details: ${(e as Error).message}`);
         await this.returnToRoutesList(flightCode);
         continue;
       }
+
+      // We use a dedicated try/finally for the modal logic to ensure we ALWAYS attempt to close it
+      try {
+        const seatLayoutHeader = this.page.getByText(/seat layout|cargo|capacity|load|config/i).first();
+        const autoButton = this.page.locator('button, .btn, [role="button"]').filter({ hasText: /^auto([^a-z]|$)/i }).first();
 
       // Expand seat layout if necessary
       if (await seatLayoutHeader.isVisible().catch(() => false) && !(await autoButton.isVisible().catch(() => false))) {
@@ -209,8 +210,12 @@ export class PricingUtils {
         console.log('No prices needed updating (already optimal).');
       }
 
-      console.log('Returning to routes list...');
-      await this.returnToRoutesList(flightCode);
+      } catch (error) {
+          console.error(`[${flightCode}] Critical error during price update: ${(error as Error).message}`);
+      } finally {
+          console.log(`[${flightCode}] Finalizing modal state...`);
+          await this.returnToRoutesList(flightCode);
+      }
     }
 
     const summary = updatedFlights > 0
@@ -251,31 +256,46 @@ export class PricingUtils {
   }
 
   private async returnToRoutesList(flightCode: string): Promise<void> {
-    console.log(`Navigating out of the seat-layout modal for flight code ${flightCode}...`);
+    const logPrefix = `[${flightCode || 'Nav'}]`;
+    console.log(`${logPrefix} Closing details...`);
 
-    // Navigate out of the seat-layout modal cleanly using yesterday's precise working logic
+    // Strategy 1: The standard close 'X' button (most reliable for modals)
+    const closeBtn = this.page.locator('.modal-header .close, .box-header .close, button.close').first();
+    if (await closeBtn.isVisible().catch(() => false)) {
+        console.log(`${logPrefix} Clicking 'X' close button.`);
+        await closeBtn.click().catch(() => {});
+        await this.page.waitForTimeout(500);
+        return;
+    }
+
+    // Strategy 2: Predefined 'Back' buttons (chevrons)
     const backBtn = this.page.locator('.modal-header, .box-header').locator('span, i, div, a, button').filter({ hasText: /^</ }).first();
     if (await backBtn.isVisible().catch(() => false)) {
-      console.log('Clicking main < back chevron...');
-      await backBtn.click();
-      await this.page.waitForTimeout(1000);
+      console.log(`${logPrefix} Clicking back chevron.`);
+      await backBtn.click().catch(() => {});
+      await this.page.waitForTimeout(500);
+      return;
+    }
+
+    // Strategy 3: Text-based back buttons
+    const textBackBtn = this.page.getByText(/<\s*[A-Z0-9-]{3,}/i).first();
+    if (await textBackBtn.isVisible().catch(() => false)) {
+      console.log(`${logPrefix} Clicking text back.`);
+      await textBackBtn.click().catch(() => {});
+      await this.page.waitForTimeout(500);
+      return;
+    }
+
+    // Strategy 4: Nuclear Reset (If all else fails, reload the dashboard container)
+    console.warn(`${logPrefix} NO CLOSE BUTTON FOUND. Triggering Nuclear Reset.`);
+    const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
+    if (await mapRoutes.isVisible().catch(() => false)) {
+        await mapRoutes.click().catch(() => {});
+        await this.waitForRoutesPageReady(5000).catch(() => {});
     } else {
-      const textBackBtn = this.page.getByText(/<\s*[A-Z0-9-]{3,}/i).first();
-      if (await textBackBtn.isVisible().catch(() => false)) {
-        console.log('Clicking text back chevron...');
-        await textBackBtn.click();
-        await this.page.waitForTimeout(1000);
-      } else {
-        console.log('Fallback: clicking close X button or mapRoutes...');
-        await this.page.locator('.modal-header .close, .box-header .close').first().click().catch(() => undefined);
-        await this.page.waitForTimeout(1000);
-        const mapRoutes = this.page.locator('#mapRoutes').getByRole('img').first();
-        if (await mapRoutes.isVisible().catch(() => false)) {
-          console.log('Clicking mapRoutes image to reopen routes...');
-          await mapRoutes.click();
-          await this.waitForRoutesPageReady(5000).catch(() => false);
-        }
-      }
+        // Absolute fallback: Refresh page and re-login if needed (handled by main try/catch)
+        console.error(`${logPrefix} Dashboard blocked. Forcing page refresh.`);
+        await this.page.reload({ waitUntil: 'networkidle' }).catch(() => {});
     }
   }
 

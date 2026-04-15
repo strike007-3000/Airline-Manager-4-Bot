@@ -56,21 +56,21 @@ test('All Operations', async ({ page }) => {
   const routesPageTitle = await page.title().catch(() => '');
   console.log(`Opened routes page for pricing. URL: ${routesPageUrl || 'unavailable'}. Title: ${routesPageTitle || 'unavailable'}.`);
   
-  let pricingStepSummary = '- Pricing update completed before departures.';
-  const routesPageReadyForPricing = await pricingUtils.waitForRoutesPageReady();
-  if (routesPageReadyForPricing) {
-    try {
-      await pricingUtils.updateDailyEasyModePrices();
-    } catch (error) {
-      pricingStepSummary = '- Pricing step failed/skipped; departures still executed.';
-      console.warn('Pricing step failed; continuing with departures.', error);
-    }
-  } else {
-    pricingStepSummary = '- Pricing step skipped because routes page was not ready; departures still executed.';
+  let pricingStepSummary = '- Pricing update completed successfully.';
+  try {
+      const routesPageReadyForPricing = await pricingUtils.waitForRoutesPageReady();
+      if (routesPageReadyForPricing) {
+          await pricingUtils.updateDailyEasyModePrices();
+      } else {
+          pricingStepSummary = '- Pricing step skipped because routes page was not ready.';
+      }
+  } catch (error) {
+      pricingStepSummary = '- Pricing step failed with a critical error; moving to departures safely.';
+      console.error('Pricing module crashed:', error);
   }
 
   if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Pricing step\n${pricingStepSummary}\n\n`);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Pricing phase\n${pricingStepSummary}\n\n`);
   }
 
   await generalUtils.closePopupIfOpen();
