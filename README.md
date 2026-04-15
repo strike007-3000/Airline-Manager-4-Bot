@@ -5,15 +5,21 @@ This repository contains a bot for Airline Manager 4, built with Playwright and 
 ## Features
 
 ### Implemented
-- Start an eco-friendly campaign if not already started.
-- Keep the Eco Friendly campaign running with a simple 12-hour default activation.
-- Track in-game fuel and CO2 price history in a local JSON cache for lightweight local state.
-- Buy fuel and CO2 using simplified cover-threshold rules driven by upcoming departures.
-- Depart all planes.
-- Schedule due A-Checks and repairs (30%+ wear by default), including a departure-time retry flow if maintenance blocks a flight.
-- Force CO2 purchases when holdings go negative, even if the market is expensive.
-- Change ticket prices once a day for Easy mode flights that have not departed yet, using simple built-in multipliers.
-- **High-Frequency Fuel Monitor**: An independent workflow that checks fuel and CO2 prices every 30 minutes, ensuring you never miss a low-price window even between main runs.
+- **Enterprise-Grade Reliability**: Atomic persistence for all state files and smart "intent-based" waiting for UI elements.
+- **Precision Scheduling**: Integrated with `cron-job.org` for exact execution intervals.
+- **High-Frequency Fuel Monitor**: Independent 30-minute market checks.
+- **Maintenance Retry Flow**: Automatically handles blocks from A-checks or repairs.
+- **Easy Mode Pricing Assistant**: Dynamic ticket price adjustments without manual JSON management.
+- **Eco-Friendly Campaigns**: Automatic activation of marketing campaigns.
+
+## 🛡️ Pro-Grade Reliability Features
+
+This bot has been hardened to ensure production-grade stability:
+
+1. **Atomic Persistence Layer**: The bot uses a "Write-then-Swap" strategy for state files (like `market-history.json`). If the bot crashes mid-save, your data remains safe and uncorrupted.
+2. **Intent-Based Interaction**: Instead of using fixed delays (`sleep`), the bot monitors for specific UI signals. This makes it significantly faster on low-latency networks while maintaining 100% reliability on slow ones.
+3. **Element-Detached Protection**: Advanced iteration logic prevents common Playwright crashes during maintenance checks, even if the game UI reshuffles unexpectedly.
+4. **Dependency Pinning**: All core packages are pinned to exact versions to prevent breaking updates from upstream libraries.
 
 
 ## Usage Instructions
