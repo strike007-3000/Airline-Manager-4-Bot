@@ -9,7 +9,7 @@ export class PricingUtils {
   private readonly pricingDeadlineMs: number;
   private readonly gameMode: string;
   private readonly enablePricing: boolean;
-  private readonly multipliers: any;
+  private readonly multipliers: { [key: string]: number };
 
   constructor(page: Page) {
     this.page = page;
@@ -167,8 +167,8 @@ export class PricingUtils {
         const inputLocator = visibleInputs.nth(j);
         
         // Use evaluate to find the nearest descriptive label for this input
-        const detectedLabel = await inputLocator.evaluate((el: HTMLElement) => {
-          const row = el.closest('tr, .row, .input-group');
+        const detectedLabel = await inputLocator.evaluate((el) => {
+          const row = el.closest('tr, .row, .input-group') as HTMLElement | null;
           const text = row?.innerText?.toLowerCase() || '';
           if (text.includes('eco')) return 'economy';
           if (text.includes('bus')) return 'business';
