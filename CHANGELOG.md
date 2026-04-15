@@ -2,6 +2,12 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.2.2] - 2026-04-15
+### Added
+- **Armor-Plated Navigation**: Implemented a 4-tier escape plan for route details, including a "Nuclear Reset" fallback to prevent the bot from getting stuck in modals.
+- **Revenue Protection**: Wrapped the pricing module in a global safety bubble; if pricing fails, the bot will now automatically skip to departures instead of failing the run.
+- **Per-Flight Error Isolation**: Failures during pricing are now isolated to a single plane, allowing the bot to continue with the rest of the fleet.
+
 ## [1.2.1] - 2026-04-15
 ### Added
 - **Label-Based Pricing Safety**: The bot now reads seat class labels (Economy, Business, etc.) before setting prices to ensure 100% accuracy even if the game UI shifts.
