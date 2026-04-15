@@ -2,6 +2,14 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.2.1] - 2026-04-15
+### Added
+- **Label-Based Pricing Safety**: The bot now reads seat class labels (Economy, Business, etc.) before setting prices to ensure 100% accuracy even if the game UI shifts.
+- **Zero-Idle Campaigns**: Replaced remaining sleeps in marketing logic with dynamic wait signals.
+
+### Fixed
+- **IDE Problems Resolved**: Updated `tsconfig.json` with DOM and ESNext libraries to clear persistent "4 Problems" in VS Code.
+
 ## [1.2.0] - 2026-04-15
 ### Added
 - **Atomic Persistence**: Implemented `atomicWriteFileSync` in `GeneralUtils` to prevent file corruption during crashes.
