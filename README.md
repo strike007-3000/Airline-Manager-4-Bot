@@ -148,15 +148,22 @@ This setup is designed to stay inexpensive on GitHub Actions:
 - No route-optimizer scan or route JSON maintenance.
 - Updates are capped by `MAX_PRICE_UPDATES_PER_RUN`.
 
-If you want to keep usage even lower:
-- reduce the schedule frequency.
-- keep Playwright on a single browser.
+## Scheduling Options
 
-## Reliability Upgrade: External Scheduling (cron-job.org)
+Choose one of the two following methods to run your bot automatically.
 
-GitHub Actions internal scheduling can be delayed. For precise runs, use **cron-job.org** to trigger the workflows via the GitHub API.
+### Option 1: GitHub Actions (Standard - Easier)
+This uses GitHub's built-in scheduler. It is easy to set up but can sometimes be delayed by 10-60 minutes depending on GitHub's server load.
 
-### 1. Create a Secure GitHub Token (Fine-grained)
+1. Open `.github/workflows/fuel-monitor.yml` and `.github/workflows/playwright.yml` in this repository.
+2. Find the lines under `on:` that are commented out (starting with `# schedule:`).
+3. Remove the `#` characters to "uncomment" them.
+4. Save (Commit) the files. GitHub will now run the bot according to the schedule.
+
+### Option 2: cron-job.org (Reliability Upgrade - Recommended)
+This is for people who want the bot to run **precisely** on time. You will use an external service to "ping" GitHub to start the bot.
+
+#### 1. Create a Secure GitHub Token (Fine-grained)
 Using a Fine-grained token is more secure because it gives access **only** to this specific repository.
 
 1. Go to your GitHub [Fine-grained tokens settings](https://github.com/settings/personal-access-tokens/new).
@@ -168,31 +175,21 @@ Using a Fine-grained token is more secure because it gives access **only** to th
    - Find **Actions** and set access to **Read and write**.
 6. Click **Generate token** and **copy it immediately**.
 
-### 2. Configure cron-job.org Jobs
-
-Create two separate cron jobs on cron-job.org. For each job:
-
-#### Step-by-Step Configuration:
-1. Click the **+ Create Cronjob** button in your dashboard.
+#### 2. Configure cron-job.org Jobs
+1. Click the **+ Create Cronjob** button in your cron-job.org dashboard.
 2. **Title**: `AM4 Fuel Monitor` (or `AM4 Main Ops`).
 3. **URL**: Use the corresponding URL from the table below.
 4. **Request Method**: Change it from `GET` to `POST`.
-5. **Request Body**:
-   - Scroll down to the **Body** section.
-   - Select **Raw data** (usually the default).
-   - Paste: `{"ref":"main"}`
+5. **Request Body**: Select **Raw data** and paste: `{"ref":"main"}`
 6. **HTTP Headers** (Crucial):
-   - Scroll to **Advanced** > **HTTP Headers**.
-   - Click **Add Header** three times and fill them exactly:
+   - Add these three headers under **Advanced** > **HTTP Headers**:
      - `Accept`: `application/vnd.github+json`
      - `Authorization`: `Bearer YOUR_FINE_GRAINED_TOKEN_HERE`
      - `X-GitHub-Api-Version`: `2022-11-28`
 7. **Execution Schedule**:
-   - For **Fuel**: Set to `Every 30 minutes` (using the "Standard" tab or cron `0,30 * * * *`).
-   - For **Main Ops**: Set your preferred hours (e.g., "Every 2 hours").
-8. Click **Create** at the bottom.
-
-#### Job Details Table:
+   - For **Fuel**: Every 30 minutes (`0,30 * * * *`).
+   - For **Main Ops**: Choose your preferred hours.
+8. Click **Create**.
 
 | Job Title | Target Workflow URL |
 | :--- | :--- |

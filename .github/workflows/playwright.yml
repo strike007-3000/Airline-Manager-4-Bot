@@ -2,6 +2,10 @@ name: Playwright Tests
 on:
   # Scheduling moved to cron-job.org for better reliability
   workflow_dispatch:
+  # schedule:
+  #   - cron: "0 22 * * *"
+  #   - cron: "0 0,2,4,6,8 * * *"
+  #   - cron: "0 11,14,17,20 * * *"
 permissions:
   contents: read
 jobs:

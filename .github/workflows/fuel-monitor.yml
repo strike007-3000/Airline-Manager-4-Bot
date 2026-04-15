@@ -2,6 +2,8 @@ name: Fuel Monitor (30m)
 on:
   # Scheduling moved to cron-job.org for better reliability
   workflow_dispatch:
+  # schedule:
+  #   - cron: "*/30 * * * *"
 permissions:
   contents: read
 jobs:
