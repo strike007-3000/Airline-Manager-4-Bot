@@ -22,34 +22,40 @@ test('All Operations', async ({ page }) => {
   await generalUtils.login(page);
 
   await page.locator('#mapRoutes').getByRole('img').click();
-  await GeneralUtils.sleep(2500);
+  // Wait for routes page signature element
+  await page.waitForSelector('.route, .route-row, #departAll', { timeout: 10000 }).catch(() => {});
+  
   await fuelUtils.analyzePlannedDepartures();
   await generalUtils.closePopupIfOpen();
 
   await page.locator('#mapMaint > img').first().click();
+  // Wait for market modal signature
+  await page.waitForSelector('.modal-body, #holding', { timeout: 10000 }).catch(() => {});
   await fuelUtils.buyFuel();
 
   await page.getByRole('button', { name: ' Co2' }).click();
-  await GeneralUtils.sleep(1000);
+  await page.waitForSelector('#remCapacity', { timeout: 5000 }).catch(() => {});
   await fuelUtils.buyCo2();
   await generalUtils.closePopupIfOpen();
 
   await page.locator('div:nth-child(5) > #mapMaint > img').click();
+  await page.waitForSelector('.modal-title', { timeout: 5000 }).catch(() => {});
   await campaignUtils.createCampaign();
   await generalUtils.closePopupIfOpen();
-  await GeneralUtils.sleep(1000);
 
   await page.locator('div:nth-child(4) > #mapMaint > img').click();
+  await page.waitForSelector('.modal-body', { timeout: 5000 }).catch(() => {});
   await maintenanceUtils.checkPlanes();
-  await GeneralUtils.sleep(1000);
   await maintenanceUtils.repairPlanes();
-  await GeneralUtils.sleep(1000);
   await generalUtils.closePopupIfOpen();
 
   await page.locator('#mapRoutes').getByRole('img').click();
+  await page.waitForSelector('.route, .route-row, #departAll', { timeout: 10000 }).catch(() => {});
+  
   const routesPageUrl = page.url();
   const routesPageTitle = await page.title().catch(() => '');
   console.log(`Opened routes page for pricing. URL: ${routesPageUrl || 'unavailable'}. Title: ${routesPageTitle || 'unavailable'}.`);
+  
   let pricingStepSummary = '- Pricing update completed before departures.';
   const routesPageReadyForPricing = await pricingUtils.waitForRoutesPageReady();
   if (routesPageReadyForPricing) {

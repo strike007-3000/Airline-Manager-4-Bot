@@ -242,8 +242,7 @@ export class FuelUtils {
         });
 
         history[resource] = resourceHistory.slice(-this.maxPriceHistoryEntries);
-        fs.mkdirSync(path.dirname(this.marketHistoryFile), { recursive: true });
-        fs.writeFileSync(this.marketHistoryFile, JSON.stringify(history, null, 2));
+        GeneralUtils.atomicWriteFileSync(this.marketHistoryFile, JSON.stringify(history, null, 2));
 
         return history[resource].map(entry => entry.price);
     }

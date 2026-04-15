@@ -26,8 +26,8 @@ export class FleetUtils {
                 console.log(`Departure alert says: ${modalText.substring(0, 150).replace(/\n/g, ' ')}`);
             }
             return modalText.replace(/\s+/g, ' ').trim().toLowerCase();
-            return '';
-    }        return '';
+        }
+        return '';
     }
 
     private maintenanceBlockingDeparture(modalText: string): boolean {
@@ -66,24 +66,27 @@ export class FleetUtils {
         console.log('Preparing flights for departure with A-check and repair scheduling...');
         await this.scheduleMaintenanceAndReturnToRoutes();
 
-        let departAllVisible = await this.page.locator('#departAll').isVisible().catch(() => false);
+        // Use a more specific locator for the 'Depart All' button
+        const departAllSelector = '#departAll';
+        let departAllVisible = await this.page.locator(departAllSelector).isVisible().catch(() => false);
         console.log('Looking if there are any planes to be departed...');
 
         let count = 0;
         while (departAllVisible && count < this.maxTry) {
-            console.log('Departing 20 or less...');
+            console.log(`Departure attempt ${count + 1} of ${this.maxTry}...`);
 
-            const departAll = this.page.locator('#departAll');
+            const departAll = this.page.locator(departAllSelector);
             await departAll.click();
 
             // Wait dynamically for the button to disappear or an alert to appear
-            // We use a shorter timeout (5s) for the "no-alert/button-stays" case 
-            // since AM4 might just process the batch without a modal if there are many planes.
+            // We use a shorter timeout (5s) for the "batch processed" case
             await Promise.any([
                 this.page.locator('.sweet-alert:visible, .alert:visible, #error:visible').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {}),
                 departAll.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
             ]);
-            await this.page.waitForTimeout(200); // Minimal buffer for rendering
+            
+            // Minimal buffer for modal rendering
+            await this.page.waitForTimeout(500); 
 
             const modalText = await this.getDepartureModalText();
             const maintenanceBlocked = this.maintenanceBlockingDeparture(modalText);
@@ -97,19 +100,21 @@ export class FleetUtils {
                 }
             } else if (modalText !== '') {
                 if (modalText.includes('fuel') || modalText.includes('co2') || modalText.includes('quota')) {
-                    console.log('Departure blocked by fuel/CO2/quota constraints. Stopping to avoid infinite loop.');
+                    console.log(`Departure blocked by resource constraints: ${modalText}`);
                     await this.generalUtils.closePopupIfOpen();
                     break;
                 }
                 
-                // If it's a success popup or other non-blocking message, clear it to continue
+                // Continue if it's a generic success message
                 await this.generalUtils.closePopupIfOpen();
             }
 
-            departAllVisible = await this.page.locator('#departAll').isVisible().catch(() => false);
+            // Sync state and check if button is still there for another batch
+            await GeneralUtils.sleep(1000);
+            departAllVisible = await this.page.locator(departAllSelector).isVisible().catch(() => false);
             count++;
-
-            console.log('Departed 20 or less planes...');
         }
+        
+        console.log('Departure phase complete.');
     }
 }

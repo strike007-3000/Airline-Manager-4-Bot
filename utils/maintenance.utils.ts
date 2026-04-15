@@ -41,23 +41,31 @@ export class MaintenanceUtils {
         await this.openPlanningMenu();
         await this.page.getByRole('button', { name: ' Bulk check' }).click();
 
-        await GeneralUtils.sleep(2000);
-        let clicked = false;
+        // Wait for the modal content to appear
+        await this.page.locator('.modal-body').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+        await GeneralUtils.sleep(1000); 
 
-        const allCheckHoursDanger = this.page.locator('.bg-white > .text-danger');
-        const dangerChecksExist = await allCheckHoursDanger.first().isVisible().catch(() => false);
-        if (dangerChecksExist) {
-            let count = await allCheckHoursDanger.count();
-            for (let i = 0; i < count; i++) {
-                const element = allCheckHoursDanger.first();
+        let clicked = false;
+        
+        // Find all red (danger) check buttons that indicate maintenance is due
+        const dangerButtons = this.page.locator('.bg-white > .text-danger');
+        
+        // Use all() to get a snapshot of elements to avoid "Element Detached" errors during iteration
+        const elements = await dangerButtons.all();
+        console.log(`Found ${elements.length} maintenance items to check.`);
+        
+        for (const element of elements) {
+            if (await element.isVisible()) {
                 await element.click();
                 clicked = true;
-                await GeneralUtils.sleep(500);
+                // Tiny buffer for UI update
+                await this.page.waitForTimeout(300);
             }
         }
 
         if (clicked) {
             await this.page.getByRole('button', { name: 'Plan bulk check' }).click();
+            await GeneralUtils.sleep(1000);
         }
 
         return clicked;
@@ -77,13 +85,11 @@ export class MaintenanceUtils {
     }
 
     public async closeMaintenanceModal() {
-        const closeButtonSelector = '#popup > .modal-dialog > .modal-content > .modal-header > div > .glyphicons';
-        const closeButtonVisible = await this.isVisibleSafe(closeButtonSelector);
-        if (closeButtonVisible) {
-            await this.page.locator(closeButtonSelector).click();
-            await this.page.locator('#popup').waitFor({ state: 'hidden', timeout: 3000 }).catch(async () => {
-                await GeneralUtils.sleep(1000);
-            });
+        // Use a more robust selector for the close button
+        const closeButton = this.page.locator('.modal-header .close, .modal-header .glyphicons-remove_2').first();
+        if (await closeButton.isVisible().catch(() => false)) {
+            await closeButton.click();
+            await this.page.locator('.modal-content').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
         }
     }
 }

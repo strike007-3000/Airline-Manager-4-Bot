@@ -16,17 +16,18 @@ test('Fuel and CO2 Monitor', async ({ page }) => {
 
   // 2. Quick analysis of departures to inform buying logic (Cover Hours)
   await page.locator('#mapRoutes').getByRole('img').click();
-  await GeneralUtils.sleep(2000);
+  await page.waitForSelector('.route, .route-row, #departAll', { timeout: 10000 }).catch(() => {});
   await fuelUtils.analyzePlannedDepartures();
   await generalUtils.closePopupIfOpen();
 
   // 3. Navigate to Fuel/Maintenance and Buy Fuel
   await page.locator('#mapMaint > img').first().click();
+  await page.waitForSelector('.modal-body, #holding', { timeout: 10000 }).catch(() => {});
   await fuelUtils.buyFuel();
 
   // 4. Buy CO2
   await page.getByRole('button', { name: ' Co2' }).click();
-  await GeneralUtils.sleep(1000);
+  await page.waitForSelector('#remCapacity', { timeout: 5000 }).catch(() => {});
   await fuelUtils.buyCo2();
 
   await page.close();
