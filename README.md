@@ -152,6 +152,55 @@ If you want to keep usage even lower:
 - reduce the schedule frequency.
 - keep Playwright on a single browser.
 
+## Reliability Upgrade: External Scheduling (cron-job.org)
+
+GitHub Actions internal scheduling can be delayed. For precise runs, use **cron-job.org** to trigger the workflows via the GitHub API.
+
+### 1. Create a Secure GitHub Token (Fine-grained)
+Using a Fine-grained token is more secure because it gives access **only** to this specific repository.
+
+1. Go to your GitHub [Fine-grained tokens settings](https://github.com/settings/personal-access-tokens/new).
+2. **Token name**: `CronJob-Trigger-AM4`.
+3. **Expiration**: Choose a long period (e.g., 90 days or 1 year).
+4. **Repository access**: Select **Only select repositories** and pick `strike007-3000/Airline-Manager-4-Bot`.
+5. **Permissions**: 
+   - Click **Repository permissions**.
+   - Find **Actions** and set access to **Read and write**.
+6. Click **Generate token** and **copy it immediately**.
+
+### 2. Configure cron-job.org Jobs
+
+Create two separate cron jobs on cron-job.org. For each job:
+
+#### Step-by-Step Configuration:
+1. Click the **+ Create Cronjob** button in your dashboard.
+2. **Title**: `AM4 Fuel Monitor` (or `AM4 Main Ops`).
+3. **URL**: Use the corresponding URL from the table below.
+4. **Request Method**: Change it from `GET` to `POST`.
+5. **Request Body**:
+   - Scroll down to the **Body** section.
+   - Select **Raw data** (usually the default).
+   - Paste: `{"ref":"main"}`
+6. **HTTP Headers** (Crucial):
+   - Scroll to **Advanced** > **HTTP Headers**.
+   - Click **Add Header** three times and fill them exactly:
+     - `Accept`: `application/vnd.github+json`
+     - `Authorization`: `Bearer YOUR_FINE_GRAINED_TOKEN_HERE`
+     - `X-GitHub-Api-Version`: `2022-11-28`
+7. **Execution Schedule**:
+   - For **Fuel**: Set to `Every 30 minutes` (using the "Standard" tab or cron `0,30 * * * *`).
+   - For **Main Ops**: Set your preferred hours (e.g., "Every 2 hours").
+8. Click **Create** at the bottom.
+
+#### Job Details Table:
+
+| Job Title | Target Workflow URL |
+| :--- | :--- |
+| **Fuel Monitor** | `https://api.github.com/repos/strike007-3000/Airline-Manager-4-Bot/actions/workflows/fuel-monitor.yml/dispatches` |
+| **Main Ops** | `https://api.github.com/repos/strike007-3000/Airline-Manager-4-Bot/actions/workflows/playwright.yml/dispatches` |
+
+---
+
 ## Step-by-step: how to start running this on GitHub Actions
 
 1. Fork the repository.
