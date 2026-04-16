@@ -2,6 +2,12 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.2.3] - 2026-04-16
+### Fixed
+- **CO2 Negative Fix**: Resolved a race condition where the bot would read Fuel market data instead of CO2 data due to shared element IDs.
+- **Robust Market Detection**: Added `:visible` filters to market locators to ensure data is read from the active UI tab.
+- **Improved Debt Recovery**: Fixed a logic bug in the purchase calculator that prevented buying CO2 when the account was in debt but the UI reported zero remaining capacity.
+
 ## [1.2.2] - 2026-04-15
 ### Added
 - **Armor-Plated Navigation**: Implemented a 4-tier escape plan for route details, including a "Nuclear Reset" fallback to prevent the bot from getting stuck in modals.

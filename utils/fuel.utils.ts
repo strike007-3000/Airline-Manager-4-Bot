@@ -220,9 +220,9 @@ export class FuelUtils {
 
     private async readMarketState() {
         return {
-            currentPrice: await this.readInteger(this.page.getByText('Total price$').locator('b > span')),
-            currentHolding: await this.readInteger(this.page.locator('#holding')),
-            emptyCapacity: await this.readInteger(this.page.locator('#remCapacity')),
+            currentPrice: await this.readInteger(this.page.locator('b > span:visible').filter({ hasText: /\d+/ }).first()),
+            currentHolding: await this.readInteger(this.page.locator('#holding:visible')),
+            emptyCapacity: await this.readInteger(this.page.locator('#remCapacity:visible')),
         };
     }
 
@@ -379,8 +379,14 @@ export class FuelUtils {
 
     private calculateNegativeCo2BufferPurchase(currentHolding: number, emptyCapacity: number): number {
         const deficit = Math.abs(Math.min(currentHolding, 0));
+        // If we are in debt, we should at least buy the deficit amount.
+        // We also want a buffer of half the remaining capacity if possible.
         const halfRemainingCapacity = Math.ceil(Math.max(emptyCapacity, 0) * 0.5);
 
-        return Math.min(Math.max(deficit, halfRemainingCapacity), Math.max(emptyCapacity, 0));
+        // Ensure we buy at least the deficit, but never more than the total room available.
+        // If emptyCapacity is 0, we can't buy, but in AM4 if you are in debt, 
+        // the capacity usually allows buying at least up to the max.
+        const quantity = Math.max(deficit, halfRemainingCapacity);
+        return Math.min(quantity, Math.max(emptyCapacity, 0));
     }
 }

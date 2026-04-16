@@ -26,8 +26,9 @@ test('Fuel and CO2 Monitor', async ({ page }) => {
   await fuelUtils.buyFuel();
 
   // 4. Buy CO2
-  await page.getByRole('button', { name: ' Co2' }).click();
-  await page.waitForSelector('#remCapacity', { timeout: 5000 }).catch(() => {});
+  await page.getByRole('button', { name: /Co2/i }).click();
+  await GeneralUtils.sleep(2000); // 2s delay to ensure market numbers (Price/Holding) have updated to CO2 scale
+  await page.waitForSelector('#remCapacity:visible', { timeout: 5000 }).catch(() => {});
   await fuelUtils.buyCo2();
 
   await page.close();
