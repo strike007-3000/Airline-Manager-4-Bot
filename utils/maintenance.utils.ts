@@ -1,7 +1,7 @@
 import { Page } from "@playwright/test";
 import { GeneralUtils } from "./general.utils";
 
-require('dotenv').config();
+
 
 export class MaintenanceUtils {
     page: Page;
@@ -12,10 +12,7 @@ export class MaintenanceUtils {
         this.repairThreshold = process.env.REPAIR_THRESHOLD_PERCENT ?? '30';
     }
 
-    private async isVisibleSafe(selector: string) {
-        const locator = this.page.locator(selector).first();
-        return locator.isVisible().catch(() => false);
-    }
+
 
     private async openPlanningMenu() {
         await this.page.getByRole('button', { name: ' Plan' }).click();
@@ -84,12 +81,5 @@ export class MaintenanceUtils {
         };
     }
 
-    public async closeMaintenanceModal() {
-        // Use a more robust selector for the close button
-        const closeButton = this.page.locator('.modal-header .close, .modal-header .glyphicons-remove_2').first();
-        if (await closeButton.isVisible().catch(() => false)) {
-            await closeButton.click();
-            await this.page.locator('.modal-content').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
-        }
-    }
+
 }

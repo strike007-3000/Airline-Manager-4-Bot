@@ -2,6 +2,18 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.2.5] - 2026-06-25
+### Deleted
+- **Centralized dotenv**: Removed 6 redundant `require('dotenv').config()` calls across utils and test files. Environment loading now happens once in `playwright.config.ts`.
+- **Redundant `page` parameter**: `GeneralUtils.login()` no longer takes a `page` argument — it uses the instance's `this.page` like every other method.
+- **Dead code**: Removed unused `isVisibleSafe()` method from `MaintenanceUtils`.
+- **Duplicate modal logic**: Removed `closeMaintenanceModal()` from `MaintenanceUtils` — callers now use the existing `GeneralUtils.closePopupIfOpen()`.
+- **Unused variable**: Removed `routesContainer` from `PricingUtils.updateDailyEasyModePrices()`.
+
+### Fixed
+- **Typo**: Corrected `kemudian` → `then` in `GeneralUtils.atomicWriteFileSync` docstring.
+- **Inconsistent indentation**: Fixed mixed 2/4-space indentation inside `PricingUtils` try/finally block.
+
 ## [1.2.4] - 2026-06-25
 ### Fixed
 - **Stable Navigation**: Configured `page.goto` to use `domcontentloaded` wait state with a 30s timeout, avoiding hangs on slow external scripts.

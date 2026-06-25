@@ -2,7 +2,7 @@ import { Page } from "@playwright/test";
 import { GeneralUtils } from "./general.utils";
 import { MaintenanceUtils } from "./maintenance.utils";
 
-require('dotenv').config();
+
 
 export class FleetUtils {
     page: Page;
@@ -54,7 +54,6 @@ export class FleetUtils {
         await this.page.locator('div:nth-child(4) > #mapMaint > img').click();
         await GeneralUtils.sleep(1500);
         const summary = await this.maintenanceUtils.prepareFlightsForDeparture();
-        await this.maintenanceUtils.closeMaintenanceModal();
         await this.generalUtils.closePopupIfOpen();
         await this.page.locator('#mapRoutes').getByRole('img').click();
         await GeneralUtils.sleep(2500);

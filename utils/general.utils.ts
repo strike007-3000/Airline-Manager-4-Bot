@@ -3,7 +3,7 @@ import * as path from 'path';
 import { Page } from "@playwright/test";
 import { ConfigUtils } from "./config.utils";
 
-require('dotenv').config();
+
 
 export class GeneralUtils {
     username : string;
@@ -20,7 +20,8 @@ export class GeneralUtils {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    public async login(page: Page) {
+    public async login() {
+        const page = this.page;
         console.log('Logging in...')
 
         await page.goto('https://www.airlinemanager.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -80,18 +81,28 @@ export class GeneralUtils {
         // Give transitioning popups a brief window to appear
         await popup.waitFor({ state: 'visible', timeout: 500 }).catch(() => {});
         if (await popup.isVisible().catch(() => false)) {
-            const closeButton = this.page.locator('#popup .close, #popup .glyphicons, .modal-header .close').first();
+            const closeButton = this.page.locator('#popup .close, #popup .glyphicons').first();
             if (await closeButton.isVisible().catch(() => false)) {
                 await closeButton.click().catch(() => {});
             }
             await this.page.keyboard.press('Escape').catch(() => {});
             await popup.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {});
+            return;
+        }
+
+        // Fallback: close any generic Bootstrap modal that is not #popup
+        const genericClose = this.page.locator('.modal-header .close, .modal-header .glyphicons-remove_2').first();
+        if (await genericClose.isVisible().catch(() => false)) {
+            await genericClose.click().catch(() => {});
+            await this.page.keyboard.press('Escape').catch(() => {});
+            // Wait for generic modal to hide
+            await this.page.locator('.modal').first().waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
         }
     }
 
     /**
      * Atomically writes data to a file by writing to a temporary file first 
-     * and kemudian performing a synchronous rename. Prevents file corruption.
+     * and then performing a synchronous rename. Prevents file corruption.
      */
     public static atomicWriteFileSync(filePath: string, data: string) {
         const tempPath = `${filePath}.tmp_${Date.now()}`;

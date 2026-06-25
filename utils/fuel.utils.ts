@@ -4,7 +4,8 @@ import { Locator, Page } from "@playwright/test";
 import { ConfigUtils } from "./config.utils";
 import { GeneralUtils } from "./general.utils";
 
-require('dotenv').config();
+
+
 
 type ResourceType = 'fuel' | 'co2';
 
