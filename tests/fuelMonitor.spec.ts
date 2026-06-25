@@ -2,7 +2,7 @@ import { test } from '@playwright/test';
 import { GeneralUtils } from '../utils/general.utils';
 import { FuelUtils } from '../utils/fuel.utils';
 
-require('dotenv').config();
+
 
 test('Fuel and CO2 Monitor', async ({ page }) => {
   // Set a shorter timeout for the monitor run
@@ -12,7 +12,7 @@ test('Fuel and CO2 Monitor', async ({ page }) => {
   const fuelUtils = new FuelUtils(page);
 
   // 1. Login
-  await generalUtils.login(page);
+  await generalUtils.login();
 
   // 2. Quick analysis of departures to inform buying logic (Cover Hours)
   await page.locator('#mapRoutes').getByRole('img').click();

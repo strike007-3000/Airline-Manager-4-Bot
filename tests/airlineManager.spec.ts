@@ -7,7 +7,7 @@ import { FleetUtils } from '../utils/fleet.utils';
 import { MaintenanceUtils } from '../utils/maintenance.utils';
 import { PricingUtils } from '../utils/pricing.utils';
 
-require('dotenv').config();
+
 
 test('All Operations', async ({ page }) => {
   test.setTimeout(process.env.CI ? 240000 : 120000);
@@ -19,7 +19,7 @@ test('All Operations', async ({ page }) => {
   const maintenanceUtils = new MaintenanceUtils(page);
   const pricingUtils = new PricingUtils(page);
 
-  await generalUtils.login(page);
+  await generalUtils.login();
 
   await page.locator('#mapRoutes').getByRole('img').click();
   // Wait for routes page signature element

@@ -55,8 +55,7 @@ export class PricingUtils {
     console.log('Pre-departure Easy mode ticket-price check started...');
     const runDeadline = Date.now() + this.pricingDeadlineMs;
 
-    // Look for links in the main content area (using a broader but safe selector)
-    const routesContainer = this.page.locator('#holding, #standard, .box-body, #routeList, #main-view').first();
+
     const routeLinks = this.page.locator('a:visible, button:visible, [role="link"]:visible').filter({
       hasText: /.+ - .+/i
     });
@@ -137,78 +136,78 @@ export class PricingUtils {
         const seatLayoutHeader = this.page.getByText(/seat layout|cargo|capacity|load|config/i).first();
         const autoButton = this.page.locator('button, .btn, [role="button"]').filter({ hasText: /^auto([^a-z]|$)/i }).first();
 
-      // Expand seat layout if necessary
-      if (await seatLayoutHeader.isVisible().catch(() => false) && !(await autoButton.isVisible().catch(() => false))) {
-        console.log('Seat Layout header is visible but Auto is not. Clicking header to expand...');
-        await seatLayoutHeader.click({ timeout: 3000, force: true }).catch(() => {});
-        await this.page.waitForTimeout(500);
-      }
-
-      if (!(await autoButton.isVisible().catch(() => false))) {
-        console.log('Auto button not found even after expansion attempt.');
-        await this.returnToRoutesList(flightCode);
-        continue;
-      }
-
-      console.log('Clicking Auto button...');
-      await autoButton.click({ timeout: 3000, force: true }).catch((e) => console.log('Auto click error: ' + e.message));
-      await this.page.waitForTimeout(1000);
-
-      let changedAnyPrice = false;
-
-      // Find ALL visible inputs in the modal
-      const visibleInputs = this.page.locator('.modal:visible input:visible');
-      const inputCount = await visibleInputs.count().catch(() => 0);
-      console.log(`Found ${inputCount} visible inputs in the Seat Layout modal.`);
-
-      // Since AM4 uses type="number" or untyped HTML inputs for prices, we grab all visible inputs.
-      // We also check for nearby text to identify the class (Economy, Business, First, Cargo)
-      let classInputs: { locator: Locator, label: string }[] = [];
-      for (let j = 0; j < inputCount; j++) {
-        const inputLocator = visibleInputs.nth(j);
-        
-        // Use evaluate to find the nearest descriptive label for this input
-        const detectedLabel = await inputLocator.evaluate((el) => {
-          const row = el.closest('tr, .row, .input-group') as HTMLElement | null;
-          const text = row?.innerText?.toLowerCase() || '';
-          if (text.includes('eco')) return 'economy';
-          if (text.includes('bus')) return 'business';
-          if (text.includes('fir')) return 'first';
-          if (text.includes('large')) return 'cargoLarge';
-          if (text.includes('heavy') || text.includes('tra')) return 'cargoHeavy';
-          return '';
-        }).catch(() => '');
-
-        if (detectedLabel) {
-           classInputs.push({ locator: inputLocator, label: detectedLabel });
+        // Expand seat layout if necessary
+        if (await seatLayoutHeader.isVisible().catch(() => false) && !(await autoButton.isVisible().catch(() => false))) {
+          console.log('Seat Layout header is visible but Auto is not. Clicking header to expand...');
+          await seatLayoutHeader.click({ timeout: 3000, force: true }).catch(() => {});
+          await this.page.waitForTimeout(500);
         }
-      }
 
-      console.log(`Detected ${classInputs.length} labelled price inputs.`);
+        if (!(await autoButton.isVisible().catch(() => false))) {
+          console.log('Auto button not found even after expansion attempt.');
+          await this.returnToRoutesList(flightCode);
+          continue;
+        }
 
-      for (const item of classInputs) {
+        console.log('Clicking Auto button...');
+        await autoButton.click({ timeout: 3000, force: true }).catch((e) => console.log('Auto click error: ' + e.message));
+        await this.page.waitForTimeout(1000);
+
+        let changedAnyPrice = false;
+
+        // Find ALL visible inputs in the modal
+        const visibleInputs = this.page.locator('.modal:visible input:visible');
+        const inputCount = await visibleInputs.count().catch(() => 0);
+        console.log(`Found ${inputCount} visible inputs in the Seat Layout modal.`);
+
+        // Since AM4 uses type="number" or untyped HTML inputs for prices, we grab all visible inputs.
+        // We also check for nearby text to identify the class (Economy, Business, First, Cargo)
+        let classInputs: { locator: Locator, label: string }[] = [];
+        for (let j = 0; j < inputCount; j++) {
+          const inputLocator = visibleInputs.nth(j);
+        
+          // Use evaluate to find the nearest descriptive label for this input
+          const detectedLabel = await inputLocator.evaluate((el) => {
+            const row = el.closest('tr, .row, .input-group') as HTMLElement | null;
+            const text = row?.innerText?.toLowerCase() || '';
+            if (text.includes('eco')) return 'economy';
+            if (text.includes('bus')) return 'business';
+            if (text.includes('fir')) return 'first';
+            if (text.includes('large')) return 'cargoLarge';
+            if (text.includes('heavy') || text.includes('tra')) return 'cargoHeavy';
+            return '';
+          }).catch(() => '');
+
+          if (detectedLabel) {
+            classInputs.push({ locator: inputLocator, label: detectedLabel });
+          }
+        }
+
+        console.log(`Detected ${classInputs.length} labelled price inputs.`);
+
+        for (const item of classInputs) {
           const multiplier = this.multipliers[item.label];
           if (multiplier) {
-              const changed = await this.updateAmount(item.locator, multiplier, item.label, item.label.startsWith('cargo'));
-              if (changed) changedAnyPrice = true;
+            const changed = await this.updateAmount(item.locator, multiplier, item.label, item.label.startsWith('cargo'));
+            if (changed) changedAnyPrice = true;
           }
-      }
-
-      if (changedAnyPrice) {
-        console.log('Prices were changed. Looking for Save button...');
-        const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
-        if (await saveButton.isVisible().catch(() => false)) {
-          console.log('Clicking Save button...');
-          await saveButton.click({ timeout: 3000, force: true }).catch((e) => console.log('Save click error: ' + e.message));
-          await this.page.waitForTimeout(500);
-          updatedFlights++;
-          console.log(`Route updated successfully: ${linkText}`);
-        } else {
-          console.log('Save button was not visible!');
         }
-      } else {
-        console.log('No prices needed updating (already optimal).');
-      }
+
+        if (changedAnyPrice) {
+          console.log('Prices were changed. Looking for Save button...');
+          const saveButton = this.page.getByRole('button', { name: /^save$/i }).first();
+          if (await saveButton.isVisible().catch(() => false)) {
+            console.log('Clicking Save button...');
+            await saveButton.click({ timeout: 3000, force: true }).catch((e) => console.log('Save click error: ' + e.message));
+            await this.page.waitForTimeout(500);
+            updatedFlights++;
+            console.log(`Route updated successfully: ${linkText}`);
+          } else {
+            console.log('Save button was not visible!');
+          }
+        } else {
+          console.log('No prices needed updating (already optimal).');
+        }
 
       } catch (error) {
           console.error(`[${flightCode}] Critical error during price update: ${(error as Error).message}`);
