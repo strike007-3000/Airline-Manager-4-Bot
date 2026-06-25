@@ -23,7 +23,7 @@ export class GeneralUtils {
     public async login(page: Page) {
         console.log('Logging in...')
 
-        await page.goto('https://www.airlinemanager.com/');
+        await page.goto('https://www.airlinemanager.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
         // Accept cookies if the popup exists (prevents click interception)
         const acceptCookies = page.getByRole('button', { name: /accept/i });
@@ -31,8 +31,8 @@ export class GeneralUtils {
             await acceptCookies.click().catch(() => {});
         }
 
-        // Wait for the page to be ready
-        await page.waitForLoadState('networkidle').catch(() => {});
+        // Wait for the page to be ready (short timeout to prevent hangs)
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
         // Click the main 'Log In' button to open the modal
         // We try both the JS evaluate and a direct locator to be robust
@@ -76,12 +76,16 @@ export class GeneralUtils {
     }
 
     public async closePopupIfOpen() {
-        const closeButton = this.page.locator('#popup .glyphicons, #popup .close, .modal-header .close').first();
-        if (await closeButton.isVisible().catch(() => false)) {
-            await closeButton.click();
-            await this.page.locator('#popup').waitFor({ state: 'hidden', timeout: 3000 }).catch(async () => {
-                await this.page.waitForTimeout(500);
-            });
+        const popup = this.page.locator('#popup');
+        // Give transitioning popups a brief window to appear
+        await popup.waitFor({ state: 'visible', timeout: 500 }).catch(() => {});
+        if (await popup.isVisible().catch(() => false)) {
+            const closeButton = this.page.locator('#popup .close, #popup .glyphicons, .modal-header .close').first();
+            if (await closeButton.isVisible().catch(() => false)) {
+                await closeButton.click().catch(() => {});
+            }
+            await this.page.keyboard.press('Escape').catch(() => {});
+            await popup.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {});
         }
     }
 

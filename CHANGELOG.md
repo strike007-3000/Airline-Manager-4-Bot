@@ -2,6 +2,11 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.2.4] - 2026-06-25
+### Fixed
+- **Stable Navigation**: Configured `page.goto` to use `domcontentloaded` wait state with a 30s timeout, avoiding hangs on slow external scripts.
+- **Robust Modal Close**: Improved `closePopupIfOpen` to wait up to 500ms for transitioning modals to show, before sending native Escape keyboard events to guarantee closing Bootstrap modals.
+
 ## [1.2.3] - 2026-04-16
 ### Fixed
 - **CO2 Negative Fix**: Resolved a race condition where the bot would read Fuel market data instead of CO2 data due to shared element IDs.
