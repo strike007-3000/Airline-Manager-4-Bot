@@ -71,8 +71,14 @@ export class CampaignUtils {
         if (await buyBtn.isVisible().catch(() => false)) {
             await buyBtn.click();
             console.log('Airline reputation campaign purchased successfully.');
+            await this.page.waitForTimeout(1000);
         } else {
             console.warn('Airline reputation purchase button not found.');
+            // Click Close/Cancel on campaign option modal to return to modal
+            const closeBtn = this.page.locator('.modal-header .close, .box-header .close, button.close').first();
+            if (await closeBtn.isVisible().catch(() => false)) {
+                await closeBtn.click();
+            }
         }
     }
 
@@ -95,10 +101,16 @@ export class CampaignUtils {
         if (await buyBtn.isVisible().catch(() => false)) {
             await buyBtn.click();
             console.log('Cargo reputation campaign purchased successfully.');
+            await this.page.waitForTimeout(1000);
         } else {
             console.warn('Cargo reputation purchase button not found.');
+            const closeBtn = this.page.locator('.modal-header .close, .box-header .close, button.close').first();
+            if (await closeBtn.isVisible().catch(() => false)) {
+                await closeBtn.click();
+            }
         }
     }
+
 
     public async createCampaign() {
         console.log('Create Campaign Started...');
