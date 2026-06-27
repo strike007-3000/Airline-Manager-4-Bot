@@ -2,6 +2,11 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.3.2] - 2026-06-27
+### Fixed
+- **Campaign Modal Race Condition**: Added `waitFor` logic for campaign selectors (`#dSelector`, `#c1Btn`) to wait for modal transitions to finish before querying visibility.
+- **Robust Campaign Recovery**: Added modal recovery logic (`ensureMarketingTabOpen`) to automatically reopen the marketing tab/modal if it gets closed during the campaign creation steps.
+
 ## [1.3.1] - 2026-06-27
 ### Fixed
 - **Campaign Active Checking**: Switched exact cell name checks to robust case-insensitive regular expressions to successfully check if Airline and Cargo reputation campaigns are active.
