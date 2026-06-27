@@ -2,6 +2,11 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.3.1] - 2026-06-27
+### Fixed
+- **Campaign Active Checking**: Switched exact cell name checks to robust case-insensitive regular expressions to successfully check if Airline and Cargo reputation campaigns are active.
+- **Actionability Overrides**: Configured Playwright clicks to use `force: true` on campaign modal choices to prevent pointer events being intercepted by elements.
+
 ## [1.3.0] - 2026-06-27
 ### Added
 - **Full Marketing Campaign Suite**: Added support for purchasing Airline Reputation and Cargo Reputation campaigns alongside the existing Eco-Friendly campaign.
