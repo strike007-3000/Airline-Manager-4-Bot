@@ -39,16 +39,17 @@ export class CampaignUtils {
             return;
         }
 
-        await this.page.getByRole('button', { name: ' New campaign' }).click();
-        await this.page.getByRole('cell', { name: 'Eco-friendly Increases' }).click();
+        await this.page.getByRole('button', { name: ' New campaign' }).click({ force: true });
+        await this.page.getByRole('cell', { name: 'Eco-friendly Increases' }).click({ force: true });
 
         const durationSelector = this.page.locator('#dSelector');
         if (await durationSelector.isVisible().catch(() => false)) {
             await durationSelector.selectOption(ECO_FRIENDLY_DURATION_OPTION);
         }
 
-        await this.page.getByRole('button', { name: '$' }).click();
+        await this.page.getByRole('button', { name: '$' }).click({ force: true });
         console.log(`Eco Friendly campaign created successfully for ${ECO_FRIENDLY_DURATION_HOURS} hours.`);
+
     }
 
     private async createReputation() {
@@ -58,8 +59,8 @@ export class CampaignUtils {
             return;
         }
 
-        await this.page.getByRole('button', { name: ' New campaign' }).click();
-        await this.page.getByRole('cell', { name: 'Campaigns help to increase airline reputation' }).click();
+        await this.page.getByRole('button', { name: ' New campaign' }).click({ force: true });
+        await this.page.getByRole('cell', { name: 'Campaigns help to increase airline reputation' }).click({ force: true });
 
         const durationSelector = this.page.locator('#dSelector');
         if (await durationSelector.isVisible().catch(() => false)) {
@@ -69,10 +70,16 @@ export class CampaignUtils {
         // Click first campaign option purchase button (largest reputation boost for cash)
         const buyBtn = this.page.locator('#c1Btn');
         if (await buyBtn.isVisible().catch(() => false)) {
-            await buyBtn.click();
+            await buyBtn.click({ force: true });
             console.log('Airline reputation campaign purchased successfully.');
+            await this.page.waitForTimeout(1000);
         } else {
             console.warn('Airline reputation purchase button not found.');
+            // Click Close/Cancel on campaign option modal to return to modal
+            const closeBtn = this.page.locator('.modal-header .close, .box-header .close, button.close').first();
+            if (await closeBtn.isVisible().catch(() => false)) {
+                await closeBtn.click({ force: true });
+            }
         }
     }
 
@@ -83,8 +90,8 @@ export class CampaignUtils {
             return;
         }
 
-        await this.page.getByRole('button', { name: ' New campaign' }).click();
-        await this.page.getByRole('cell', { name: 'Campaigns help to increase cargo reputation' }).click();
+        await this.page.getByRole('button', { name: ' New campaign' }).click({ force: true });
+        await this.page.getByRole('cell', { name: 'Campaigns help to increase cargo reputation' }).click({ force: true });
 
         const durationSelector = this.page.locator('#dSelector');
         if (await durationSelector.isVisible().catch(() => false)) {
@@ -93,12 +100,19 @@ export class CampaignUtils {
 
         const buyBtn = this.page.locator('#c1Btn');
         if (await buyBtn.isVisible().catch(() => false)) {
-            await buyBtn.click();
+            await buyBtn.click({ force: true });
             console.log('Cargo reputation campaign purchased successfully.');
+            await this.page.waitForTimeout(1000);
         } else {
             console.warn('Cargo reputation purchase button not found.');
+            const closeBtn = this.page.locator('.modal-header .close, .box-header .close, button.close').first();
+            if (await closeBtn.isVisible().catch(() => false)) {
+                await closeBtn.click({ force: true });
+            }
         }
     }
+
+
 
     public async createCampaign() {
         console.log('Create Campaign Started...');
