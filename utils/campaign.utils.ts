@@ -33,11 +33,12 @@ export class CampaignUtils {
     }
 
     private async createEcoFriendly() {
-        const isEcoFriendlyExists = await this.page.getByRole('cell', { name: ' Eco friendly' }).isVisible().catch(() => false);
+        const isEcoFriendlyExists = await this.page.getByRole('cell', { name: /Eco friendly/i }).isVisible().catch(() => false);
         if (isEcoFriendlyExists) {
             console.log('Eco Friendly campaign is already active.');
             return;
         }
+
 
         await this.page.getByRole('button', { name: ' New campaign' }).click({ force: true });
         await this.page.getByRole('cell', { name: 'Eco-friendly Increases' }).click({ force: true });
@@ -53,7 +54,7 @@ export class CampaignUtils {
     }
 
     private async createReputation() {
-        const isReputationExists = await this.page.getByRole('cell', { name: ' Airline reputation' }).isVisible().catch(() => false);
+        const isReputationExists = await this.page.getByRole('cell', { name: /Airline reputation/i }).isVisible().catch(() => false);
         if (isReputationExists) {
             console.log('Airline reputation campaign is already active.');
             return;
@@ -84,7 +85,7 @@ export class CampaignUtils {
     }
 
     private async createCargo() {
-        const isCargoExists = await this.page.getByRole('cell', { name: ' Cargo reputation' }).isVisible().catch(() => false);
+        const isCargoExists = await this.page.getByRole('cell', { name: /Cargo reputation/i }).isVisible().catch(() => false);
         if (isCargoExists) {
             console.log('Cargo reputation campaign is already active.');
             return;
@@ -92,6 +93,7 @@ export class CampaignUtils {
 
         await this.page.getByRole('button', { name: ' New campaign' }).click({ force: true });
         await this.page.getByRole('cell', { name: 'Campaigns help to increase cargo reputation' }).click({ force: true });
+
 
         const durationSelector = this.page.locator('#dSelector');
         if (await durationSelector.isVisible().catch(() => false)) {
