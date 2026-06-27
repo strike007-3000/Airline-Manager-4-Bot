@@ -2,6 +2,13 @@
 
 All notable changes to the Airline Manager 4 Bot will be documented in this file.
 
+## [1.3.0] - 2026-06-27
+### Added
+- **Full Marketing Campaign Suite**: Added support for purchasing Airline Reputation and Cargo Reputation campaigns alongside the existing Eco-Friendly campaign.
+- **Configurable Marketing Duration**: Enabled duration configuration (default 24h) for reputation campaigns via `MARKETING_DURATION_HOURS`.
+- **Campaign Controls**: Added environment switches `ENABLE_REPUTATION_CAMPAIGN` and `ENABLE_CARGO_CAMPAIGN` to control campaign purchases.
+- **Isolated Marketing Tests**: Created `tests/marketing.spec.ts` to test the marketing flow.
+
 ## [1.2.5] - 2026-06-25
 ### Deleted
 - **Centralized dotenv**: Removed 6 redundant `require('dotenv').config()` calls across utils and test files. Environment loading now happens once in `playwright.config.ts`.

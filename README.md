@@ -55,6 +55,10 @@ Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** and
 - `EASY_MODE_FIRST_MULTIPLIER_PERCENT`: `106`
 - `EASY_MODE_CARGO_LARGE_MULTIPLIER_PERCENT`: `110`
 - `EASY_MODE_CARGO_HEAVY_MULTIPLIER_PERCENT`: `108`
+- `ENABLE_REPUTATION_CAMPAIGN`: optional toggle for Airline Reputation marketing campaigns (`true`/`false`, default `true`).
+- `ENABLE_CARGO_CAMPAIGN`: optional toggle for Cargo Reputation marketing campaigns (`true`/`false`, default `true`).
+- `MARKETING_DURATION_HOURS`: optional campaign duration selection: `4`, `8`, or `24` hours (default `24`).
+
 
 ### 5. Daily Easy mode pricing
 
