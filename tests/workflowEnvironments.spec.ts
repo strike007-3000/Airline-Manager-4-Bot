@@ -21,7 +21,7 @@ for (const file of fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))) {
       else if (inJobs && current) jobs[current].push(line);
     }
     for (const [name, body] of Object.entries(jobs)) {
-      const usesSecret = body.some((l) => /secrets\.(?!GITHUB_TOKEN\b)\w+/.test(l));
+      const usesSecret = body.some((l) => /secrets(?:\.(?!GITHUB_TOKEN\b)\w+|\[\s*['"](?!GITHUB_TOKEN['"])[^'"]+['"]\s*\])/.test(l));
       if (usesSecret) {
         expect(body.some((l) => /^ {4}environment:/.test(l)), `${file} job "${name}" reads secrets without environment`).toBe(true);
       }
